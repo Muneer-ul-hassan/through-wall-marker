@@ -785,6 +785,63 @@ def main(argv=None):
     vio = "pending"
     show_drone_window = True
 
+    class SafeFlightController:
+        def __init__(self, tello):
+            self.tello = tello
+            self.lock = threading.Lock()
+            self.status = "LANDED"  # LANDED, TAKING_OFF, HOVERING, MOVING, LANDING
+            self.last_action = "Ready"
+
+        def send_command(self, cmd_name, func, *args):
+            if not self.tello:
+                return
+            if not self.lock.acquire(blocking=False):
+                log.warning("Drone busy (%s). Skipped command '%s'", self.last_action, cmd_name)
+                return
+
+            def _worker():
+                try:
+                    self.last_action = cmd_name
+                    if cmd_name == "takeoff":
+                        if self.status != "LANDED":
+                            log.warning("Takeoff ignored: drone already %s", self.status)
+                            return
+                        self.status = "TAKING_OFF"
+                        log.info(">>> TAKEOFF starting... Please wait (do NOT press other keys)")
+                        self.tello.takeoff()
+                        self.status = "HOVERING"
+                        self.last_action = "Hovering"
+                        log.info(">>> Tello is airborne and HOVERING! Safe to move with [W/S/A/D]")
+                    elif cmd_name == "land":
+                        self.status = "LANDING"
+                        log.info(">>> LAND command sent...")
+                        self.tello.land()
+                        self.status = "LANDED"
+                        self.last_action = "Landed"
+                        log.info(">>> Tello LANDED safely.")
+                    else:
+                        if self.status != "HOVERING":
+                            log.warning("Cannot '%s': Drone is %s (Takeoff first with [T])", cmd_name, self.status)
+                            return
+                        self.status = "MOVING"
+                        log.info(">>> Executing flight move: %s...", cmd_name)
+                        func(*args)
+                        self.status = "HOVERING"
+                        self.last_action = "Hovering"
+                except Exception as exc:
+                    log.error("Flight command '%s' returned error: %s", cmd_name, exc)
+                    if self.status == "TAKING_OFF":
+                        self.status = "LANDED"
+                    elif self.status == "MOVING":
+                        self.status = "HOVERING"
+                    self.last_action = f"Error: {exc}"
+                finally:
+                    self.lock.release()
+
+            threading.Thread(target=_worker, daemon=True).start()
+
+    flight_ctrl = SafeFlightController(getattr(source, "tello", None))
+
     def pipeline_loop():
         nonlocal vio, show_drone_window
         while not stop.is_set():
@@ -818,45 +875,51 @@ def main(argv=None):
             if show_drone_window:
                 try:
                     vis = draw_drone_detections(frame, getattr(pipeline, "last_detections", []))
-                    cv2.putText(vis, "[T] Takeoff | [L] Land | [W/S/A/D] Move | [J/E] Turn",
-                                (10, vis.shape[0] - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+
+                    # HUD Top Bar: Drone flight state + battery
+                    bat = meta.get("battery", "")
+                    bat_str = f" | BAT: {bat}%" if bat != "" else ""
+                    if flight_ctrl.status == "HOVERING":
+                        hud_color = (0, 255, 0)     # Green: Ready
+                    elif flight_ctrl.status == "LANDED":
+                        hud_color = (0, 165, 255)   # Amber: Landed
+                    else:
+                        hud_color = (0, 255, 255)   # Yellow: Busy moving/taking off
+
+                    hud_text = f"DRONE: [{flight_ctrl.status}]  Action: {flight_ctrl.last_action}{bat_str}"
+                    cv2.rectangle(vis, (0, 0), (vis.shape[1], 34), (20, 20, 20), -1)
+                    cv2.putText(vis, hud_text, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.62, hud_color, 2)
+
+                    # HUD Bottom Bar: Key prompt
+                    cv2.rectangle(vis, (0, vis.shape[0] - 28), (vis.shape[1], vis.shape[0]), (20, 20, 20), -1)
+                    cv2.putText(vis, "[T] Takeoff  [L] Land  [W/S/A/D] Move 30cm  [I/K] Up/Down  [J/E] Turn",
+                                (10, vis.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (230, 230, 230), 1)
+
                     cv2.imshow("Tello Drone Camera (Live Detection View)", vis)
                     key = cv2.waitKey(1) & 0xFF
                     if key == ord('q'):
                         show_drone_window = False
                         cv2.destroyAllWindows()
                     elif key == ord('t'):
-                        log.info("Takeoff!")
-                        if hasattr(source, "tello") and source.tello:
-                            threading.Thread(target=source.tello.takeoff, daemon=True).start()
+                        flight_ctrl.send_command("takeoff", flight_ctrl.tello.takeoff)
                     elif key == ord('l'):
-                        log.info("Land!")
-                        if hasattr(source, "tello") and source.tello:
-                            threading.Thread(target=source.tello.land, daemon=True).start()
+                        flight_ctrl.send_command("land", flight_ctrl.tello.land)
                     elif key in (ord('w'), 82):  # W / Forward
-                        if hasattr(source, "tello") and source.tello:
-                            threading.Thread(target=source.tello.move_forward, args=(30,), daemon=True).start()
+                        flight_ctrl.send_command("forward 30", flight_ctrl.tello.move_forward, 30)
                     elif key in (ord('s'), 84):  # S / Back
-                        if hasattr(source, "tello") and source.tello:
-                            threading.Thread(target=source.tello.move_back, args=(30,), daemon=True).start()
+                        flight_ctrl.send_command("back 30", flight_ctrl.tello.move_back, 30)
                     elif key in (ord('a'), 81):  # A / Left
-                        if hasattr(source, "tello") and source.tello:
-                            threading.Thread(target=source.tello.move_left, args=(30,), daemon=True).start()
+                        flight_ctrl.send_command("left 30", flight_ctrl.tello.move_left, 30)
                     elif key in (ord('d'), 83):  # D / Right
-                        if hasattr(source, "tello") and source.tello:
-                            threading.Thread(target=source.tello.move_right, args=(30,), daemon=True).start()
+                        flight_ctrl.send_command("right 30", flight_ctrl.tello.move_right, 30)
                     elif key == ord('i'):  # Up
-                        if hasattr(source, "tello") and source.tello:
-                            threading.Thread(target=source.tello.move_up, args=(30,), daemon=True).start()
+                        flight_ctrl.send_command("up 30", flight_ctrl.tello.move_up, 30)
                     elif key == ord('k'):  # Down
-                        if hasattr(source, "tello") and source.tello:
-                            threading.Thread(target=source.tello.move_down, args=(30,), daemon=True).start()
+                        flight_ctrl.send_command("down 30", flight_ctrl.tello.move_down, 30)
                     elif key == ord('j'):  # Rotate Left
-                        if hasattr(source, "tello") and source.tello:
-                            threading.Thread(target=source.tello.rotate_counter_clockwise, args=(30,), daemon=True).start()
+                        flight_ctrl.send_command("turn_left 30", flight_ctrl.tello.rotate_counter_clockwise, 30)
                     elif key == ord('e'):  # Rotate Right
-                        if hasattr(source, "tello") and source.tello:
-                            threading.Thread(target=source.tello.rotate_clockwise, args=(30,), daemon=True).start()
+                        flight_ctrl.send_command("turn_right 30", flight_ctrl.tello.rotate_clockwise, 30)
                 except Exception:
                     pass
 
@@ -877,9 +940,11 @@ def main(argv=None):
             cv2.destroyAllWindows()
         except Exception:
             pass
-        if hasattr(source, "tello") and source.tello:
+        if flight_ctrl.tello:
             try:
-                source.tello.land()
+                if flight_ctrl.status != "LANDED":
+                    log.info("Program exiting: landing drone safely...")
+                    flight_ctrl.tello.land()
             except Exception:
                 pass
         source.close()
