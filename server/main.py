@@ -186,6 +186,7 @@ class Pipeline:
         """Run one frame through the pipeline. Returns (marker, info)."""
         self.bridge.update(drone_pose, tracking_valid, t)
         detections = self.detector.detect(frame)
+        self.last_detections = detections
         self.frames_processed += 1
         info = {"t": t, "n_det": len(detections), "depth": None,
                 "method": None, "sigma": None,
@@ -667,9 +668,18 @@ def make_handler(state, viewer_path):
     return Handler
 
 
+class RobustThreadingHTTPServer(ThreadingHTTPServer):
+    def get_request(self):
+        while True:
+            try:
+                return super().get_request()
+            except (ssl.SSLError, OSError):
+                continue
+
+
 def run_server(state, viewer_path, host, port, use_https, cert, key):
     handler = make_handler(state, viewer_path)
-    httpd = ThreadingHTTPServer((host, port), handler)
+    httpd = RobustThreadingHTTPServer((host, port), handler)
     if use_https:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(cert, key)
@@ -731,15 +741,150 @@ def main(argv=None):
               "and retry with a real Tello.",
               file=sys.stderr)
         return 2
-    # djitellopy imports but there is no live path in this build:
-    # the Tello source stub raises rather than faking a stream.
     from server.video_source import TelloVideoSource
     try:
-        TelloVideoSource()
+        source = TelloVideoSource()
     except RuntimeError as exc:
         print(f"ERROR: --mode live: {exc}", file=sys.stderr)
         return 2
-    return 2
+
+    from server.detector import PoseDetector
+    from server.geometry import COCO_EDGES
+    from server.vio import MonocularVO
+    import cv2
+
+    def draw_drone_detections(frame, detections):
+        vis = frame.copy()
+        for det in detections:
+            bbox = det.get("bbox_xyxy")
+            conf = det.get("conf", 0.0)
+            kpts = det.get("keypoints")
+            kpt_conf = det.get("kpt_conf")
+            if bbox is not None:
+                x1, y1, x2, y2 = [int(v) for v in bbox]
+                cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(vis, f"Person {conf:.2f}", (x1, max(20, y1 - 8)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            if kpts is not None:
+                for i1, i2 in COCO_EDGES:
+                    if kpt_conf is None or (kpt_conf[i1] > 0.3 and kpt_conf[i2] > 0.3):
+                        p1 = (int(kpts[i1][0]), int(kpts[i1][1]))
+                        p2 = (int(kpts[i2][0]), int(kpts[i2][1]))
+                        cv2.line(vis, p1, p2, (0, 255, 0), 2)
+                for i, (x, y) in enumerate(kpts):
+                    if kpt_conf is None or kpt_conf[i] > 0.3:
+                        cv2.circle(vis, (int(x), int(y)), 4, (0, 0, 255), -1)
+        return vis
+
+    detector = PoseDetector()
+    detector.warmup()
+
+    state = ServerState()
+    pipeline = Pipeline(detector, drone_id="drone1")
+    stop = threading.Event()
+    vio = "pending"
+    show_drone_window = True
+
+    def pipeline_loop():
+        nonlocal vio, show_drone_window
+        while not stop.is_set():
+            if not state.running:
+                state.mark_paused()
+                time.sleep(0.1)
+                continue
+            item = source.read()
+            if item is None:
+                time.sleep(0.05)
+                continue
+            frame, pose, tracking_valid, meta = item
+            if vio == "pending":
+                vio = MonocularVO(start_pose=pose)
+            if vio is not None and vio != "pending":
+                try:
+                    pose, tracking_valid, _diag = vio.update(
+                        frame, pipeline.frames_processed / FPS_DEFAULT)
+                except Exception:
+                    tracking_valid = False
+            # If drone is stationary on desk (VIO not moved yet), use the known start pose
+            if not tracking_valid or pose is None:
+                pose = item[1]
+                tracking_valid = True
+            t = pipeline.frames_processed / FPS_DEFAULT
+            marker, info = pipeline.process_frame(
+                frame, pose, tracking_valid, t)
+            state.update_from_pipeline(pipeline, marker, info,
+                                       time.time(), t)
+
+            if show_drone_window:
+                try:
+                    vis = draw_drone_detections(frame, getattr(pipeline, "last_detections", []))
+                    cv2.putText(vis, "[T] Takeoff | [L] Land | [W/S/A/D] Move | [J/E] Turn",
+                                (10, vis.shape[0] - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+                    cv2.imshow("Tello Drone Camera (Live Detection View)", vis)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('q'):
+                        show_drone_window = False
+                        cv2.destroyAllWindows()
+                    elif key == ord('t'):
+                        log.info("Takeoff!")
+                        if hasattr(source, "tello") and source.tello:
+                            threading.Thread(target=source.tello.takeoff, daemon=True).start()
+                    elif key == ord('l'):
+                        log.info("Land!")
+                        if hasattr(source, "tello") and source.tello:
+                            threading.Thread(target=source.tello.land, daemon=True).start()
+                    elif key in (ord('w'), 82):  # W / Forward
+                        if hasattr(source, "tello") and source.tello:
+                            threading.Thread(target=source.tello.move_forward, args=(30,), daemon=True).start()
+                    elif key in (ord('s'), 84):  # S / Back
+                        if hasattr(source, "tello") and source.tello:
+                            threading.Thread(target=source.tello.move_back, args=(30,), daemon=True).start()
+                    elif key in (ord('a'), 81):  # A / Left
+                        if hasattr(source, "tello") and source.tello:
+                            threading.Thread(target=source.tello.move_left, args=(30,), daemon=True).start()
+                    elif key in (ord('d'), 83):  # D / Right
+                        if hasattr(source, "tello") and source.tello:
+                            threading.Thread(target=source.tello.move_right, args=(30,), daemon=True).start()
+                    elif key == ord('i'):  # Up
+                        if hasattr(source, "tello") and source.tello:
+                            threading.Thread(target=source.tello.move_up, args=(30,), daemon=True).start()
+                    elif key == ord('k'):  # Down
+                        if hasattr(source, "tello") and source.tello:
+                            threading.Thread(target=source.tello.move_down, args=(30,), daemon=True).start()
+                    elif key == ord('j'):  # Rotate Left
+                        if hasattr(source, "tello") and source.tello:
+                            threading.Thread(target=source.tello.rotate_counter_clockwise, args=(30,), daemon=True).start()
+                    elif key == ord('e'):  # Rotate Right
+                        if hasattr(source, "tello") and source.tello:
+                            threading.Thread(target=source.tello.rotate_clockwise, args=(30,), daemon=True).start()
+                except Exception:
+                    pass
+
+            time.sleep(1.0 / FPS_DEFAULT)
+        stop.set()
+
+    thread = threading.Thread(target=pipeline_loop, daemon=True)
+    thread.start()
+    viewer_path = WALL_MARKER_DIR / "phone" / "viewer.html"
+    try:
+        run_server(state, viewer_path, args.host, args.port,
+                   args.https, args.cert, args.key)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop.set()
+        try:
+            cv2.destroyAllWindows()
+        except Exception:
+            pass
+        if hasattr(source, "tello") and source.tello:
+            try:
+                source.tello.land()
+            except Exception:
+                pass
+        source.close()
+        pipeline.shutdown()
+    return 0
 
 
 if __name__ == "__main__":

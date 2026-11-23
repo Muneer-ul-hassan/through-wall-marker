@@ -80,18 +80,60 @@ class SyntheticSource(FrameSource):
 
 
 class TelloVideoSource(FrameSource):
-    """Real-Tello source — STUB. Ground/virtual only.
+    """Real-Tello source via djitellopy.
 
-    Instantiating (or reading) raises: a live run needs the real drone,
-    djitellopy, and the user's go-ahead. Nothing here fakes a stream.
+    Connects to the Tello drone over Wi-Fi, starts video streaming,
+    and yields (frame_bgr, initial_pose, tracking_valid, meta).
     """
 
-    def __init__(self, *args, **kwargs):
-        raise RuntimeError(
-            "Tello source needs the real drone; use --mode virtual "
-            "(ground/virtual only — no live drone in this build).")
+    def __init__(self, start_height_m=1.3):
+        try:
+            from djitellopy import Tello
+        except ImportError as exc:
+            raise RuntimeError(
+                "djitellopy is not installed. Install with: pip install djitellopy"
+            ) from exc
+
+        self.tello = Tello()
+        try:
+            self.tello.connect()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Could not connect to Tello drone ({exc}). "
+                "Ensure your laptop Wi-Fi is connected to the drone's network (TELLO-XXXXXX)."
+            ) from exc
+
+        try:
+            self.tello.streamon()
+            self.frame_reader = self.tello.get_frame_read(with_queue=True)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Could not start Tello video stream: {exc}"
+            ) from exc
+
+        self.start_height_m = float(start_height_m)
+        self.initial_pose = (np.eye(3, dtype=float), np.array([0.0, self.start_height_m, 0.0], dtype=float))
 
     def read(self):
-        raise RuntimeError(
-            "Tello source needs the real drone; use --mode virtual "
-            "(ground/virtual only — no live drone in this build).")
+        if not hasattr(self, "frame_reader") or self.frame_reader is None:
+            return None
+        frame = self.frame_reader.frame
+        if frame is None:
+            return None
+        import cv2
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        meta = {}
+        try:
+            state = self.tello.get_current_state()
+            if state and "bat" in state:
+                meta["battery"] = int(state["bat"])
+        except Exception:
+            pass
+        return frame_bgr, self.initial_pose, True, meta
+
+    def close(self):
+        try:
+            if hasattr(self, "tello") and self.tello:
+                self.tello.streamoff()
+        except Exception:
+            pass
