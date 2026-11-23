@@ -83,7 +83,15 @@ class TelloVideoSource(FrameSource):
     """Real-Tello source via djitellopy.
 
     Connects to the Tello drone over Wi-Fi, starts video streaming,
-    and yields (frame_bgr, initial_pose, tracking_valid, meta).
+    and yields (frame_bgr, start_pose, tracking_valid, meta).
+
+    The pose returned is ONLY the start pose (takeoff beside the
+    phone) for VIO initialisation, and ``tracking_valid`` is ALWAYS
+    False from this source: the source has no pose estimate, only the
+    VIO (server/vio.py) can vouch for tracking. Returning True here
+    used to validate the bridge on a frozen pose and emit a garbage
+    marker (2026-11-23 live run). The live loop passes the VIO
+    verdict straight through instead (see server/main.py).
     """
 
     def __init__(self, start_height_m=1.3):
@@ -129,7 +137,11 @@ class TelloVideoSource(FrameSource):
                 meta["battery"] = int(state["bat"])
         except Exception:
             pass
-        return frame_bgr, self.initial_pose, True, meta
+        # tracking_valid=False: this source measures no pose. Only the
+        # VIO may report tracking valid (server/main.py passes the VIO
+        # verdict through; the frozen start pose must never validate
+        # the bridge on its own).
+        return frame_bgr, self.initial_pose, False, meta
 
     def close(self):
         try:

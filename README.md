@@ -548,3 +548,22 @@ tools/make_cert.sh  self-signed cert for iPhone HTTPS on LAN
   full suite: all 5 PASS (measured — see TEST-REPORT.md).
 - Nothing outside `wall-marker/` was modified; the existing
   `tello_path_search.py`, `fly_brain.py` and `test_videos/` are untouched.
+
+- Live-path fixes, reconciled with d89be655 (2026-11-24): the other AI's `SafeFlightController` (commit d89be655)
+  is kept as the ONE flight controller — it serializes commands
+  (single lock, busy commands skipped) and gates movement on a
+  successful takeoff. Two completions added to it: land is now
+  idempotent (repeat `[L]` after landing sends nothing) and a
+  "Not joystick" takeoff failure logs the force-close-the-Tello-app
+  guidance; the `finally` block lands only while holding the
+  controller lock and only if airborne. Marker-format fix (the part
+  d89be655 did not touch): the live loop no longer overrides the VIO
+  verdict with the frozen start pose — new `live_pose_step()` passes
+  it through honestly, so no marker is emitted without a bridge
+  (the 2026-11-23 scrambled skeleton, 2.2 m for a person 0.5 m
+  away, came from feeding that fiction frame as tracking-valid);
+  scenario time is now wall-clock. `_serve_sse` now catches
+  `OSError` (WinError 10053 on browser disconnect). Verified:
+  `tests/test_live_fixes.py` 9/9 PASS; full virtual suite re-run
+  27/27 PASS with VIO numbers unchanged (s1 40.5, s23 32.6, s20
+  36.1, s4 36.3 cm).

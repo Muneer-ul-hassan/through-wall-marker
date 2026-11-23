@@ -662,7 +662,10 @@ def make_handler(state, viewer_path):
                         self.wfile.flush()
                         last_ping = time.time()
                     time.sleep(0.5)
-            except (BrokenPipeError, ConnectionResetError):
+            except OSError:
+                # Browser disconnected (BrokenPipe / reset /
+                # WinError 10053 ConnectionAbortedError):
+                # close quietly, no traceback.
                 pass
 
     return Handler
@@ -689,6 +692,98 @@ def run_server(state, viewer_path, host, port, use_https, cert, key):
              "/operator, SSE at /api/markers)",
              scheme, host, port)
     httpd.serve_forever()
+
+
+# SafeFlightController lives at module level so tests can import it.
+# It is the other AI's controller (commit d89be655), kept as-is except
+# for the two completions marked below (land idempotency, Not-joystick
+# guidance) -- there is ONE flight controller in this file.
+class SafeFlightController:
+    def __init__(self, tello):
+        self.tello = tello
+        self.lock = threading.Lock()
+        self.status = "LANDED"  # LANDED, TAKING_OFF, HOVERING, MOVING, LANDING
+        self.last_action = "Ready"
+
+    def send_command(self, cmd_name, func, *args):
+        if not self.tello:
+            return
+        if not self.lock.acquire(blocking=False):
+            log.warning("Drone busy (%s). Skipped command '%s'", self.last_action, cmd_name)
+            return
+
+        def _worker():
+            try:
+                self.last_action = cmd_name
+                if cmd_name == "takeoff":
+                    if self.status != "LANDED":
+                        log.warning("Takeoff ignored: drone already %s", self.status)
+                        return
+                    self.status = "TAKING_OFF"
+                    log.info(">>> TAKEOFF starting... Please wait (do NOT press other keys)")
+                    self.tello.takeoff()
+                    self.status = "HOVERING"
+                    self.last_action = "Hovering"
+                    log.info(">>> Tello is airborne and HOVERING! Safe to move with [W/S/A/D]")
+                elif cmd_name == "land":
+                    if self.status == "LANDED":
+                        log.debug("Land ignored: drone already LANDED")
+                        return
+                    self.status = "LANDING"
+                    log.info(">>> LAND command sent...")
+                    self.tello.land()
+                    self.status = "LANDED"
+                    self.last_action = "Landed"
+                    log.info(">>> Tello LANDED safely.")
+                else:
+                    if self.status != "HOVERING":
+                        log.warning("Cannot '%s': Drone is %s (Takeoff first with [T])", cmd_name, self.status)
+                        return
+                    self.status = "MOVING"
+                    log.info(">>> Executing flight move: %s...", cmd_name)
+                    func(*args)
+                    self.status = "HOVERING"
+                    self.last_action = "Hovering"
+            except Exception as exc:
+                log.error("Flight command '%s' returned error: %s", cmd_name, exc)
+                if "not joystick" in str(exc).lower():
+                    log.error(
+                        "TAKEOFF REJECTED (Not joystick): the Tello app on the "
+                        "phone is still holding the controls. Force-close the "
+                        "Tello app on the phone, reboot the drone, then "
+                        "restart the server and press [T] again.")
+                if self.status == "TAKING_OFF":
+                    self.status = "LANDED"
+                elif self.status == "MOVING":
+                    self.status = "HOVERING"
+                self.last_action = f"Error: {exc}"
+            finally:
+                self.lock.release()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+def live_pose_step(vio, frame, start_pose, t):
+    """Advance the live pose estimate by one frame.
+
+    Returns (vio, pose, tracking_valid). Mirrors the virtual harness
+    (tests/virtual_server.py): the VIO verdict passes through
+    honestly. The start pose is only the VIO initialisation pose --
+    it is NEVER returned as a valid pose. Before VIO initialises,
+    and whenever VIO reports invalid or raises, tracking_valid is
+    False (pose is the start pose, kept only so the per-person depth
+    history stays well-formed; the bridge ignores it while invalid,
+    so no marker is emitted).
+    """
+    if vio == "pending":
+        from server.vio import MonocularVO
+        vio = MonocularVO(start_pose=start_pose)
+    if vio is not None and vio != "pending":
+        try:
+            pose, tracking_valid, _diag = vio.update(frame, t)
+            return vio, pose, tracking_valid
+        except Exception as exc:
+            log.debug("VIO update failed: %s", exc)
+    return vio, start_pose, False
 
 
 # ---------------------------------------------------------------------------
@@ -750,7 +845,6 @@ def main(argv=None):
 
     from server.detector import PoseDetector
     from server.geometry import COCO_EDGES
-    from server.vio import MonocularVO
     import cv2
 
     def draw_drone_detections(frame, detections):
@@ -785,65 +879,11 @@ def main(argv=None):
     vio = "pending"
     show_drone_window = True
 
-    class SafeFlightController:
-        def __init__(self, tello):
-            self.tello = tello
-            self.lock = threading.Lock()
-            self.status = "LANDED"  # LANDED, TAKING_OFF, HOVERING, MOVING, LANDING
-            self.last_action = "Ready"
-
-        def send_command(self, cmd_name, func, *args):
-            if not self.tello:
-                return
-            if not self.lock.acquire(blocking=False):
-                log.warning("Drone busy (%s). Skipped command '%s'", self.last_action, cmd_name)
-                return
-
-            def _worker():
-                try:
-                    self.last_action = cmd_name
-                    if cmd_name == "takeoff":
-                        if self.status != "LANDED":
-                            log.warning("Takeoff ignored: drone already %s", self.status)
-                            return
-                        self.status = "TAKING_OFF"
-                        log.info(">>> TAKEOFF starting... Please wait (do NOT press other keys)")
-                        self.tello.takeoff()
-                        self.status = "HOVERING"
-                        self.last_action = "Hovering"
-                        log.info(">>> Tello is airborne and HOVERING! Safe to move with [W/S/A/D]")
-                    elif cmd_name == "land":
-                        self.status = "LANDING"
-                        log.info(">>> LAND command sent...")
-                        self.tello.land()
-                        self.status = "LANDED"
-                        self.last_action = "Landed"
-                        log.info(">>> Tello LANDED safely.")
-                    else:
-                        if self.status != "HOVERING":
-                            log.warning("Cannot '%s': Drone is %s (Takeoff first with [T])", cmd_name, self.status)
-                            return
-                        self.status = "MOVING"
-                        log.info(">>> Executing flight move: %s...", cmd_name)
-                        func(*args)
-                        self.status = "HOVERING"
-                        self.last_action = "Hovering"
-                except Exception as exc:
-                    log.error("Flight command '%s' returned error: %s", cmd_name, exc)
-                    if self.status == "TAKING_OFF":
-                        self.status = "LANDED"
-                    elif self.status == "MOVING":
-                        self.status = "HOVERING"
-                    self.last_action = f"Error: {exc}"
-                finally:
-                    self.lock.release()
-
-            threading.Thread(target=_worker, daemon=True).start()
-
     flight_ctrl = SafeFlightController(getattr(source, "tello", None))
 
     def pipeline_loop():
         nonlocal vio, show_drone_window
+        t0 = time.monotonic()
         while not stop.is_set():
             if not state.running:
                 state.mark_paused()
@@ -854,19 +894,20 @@ def main(argv=None):
                 time.sleep(0.05)
                 continue
             frame, pose, tracking_valid, meta = item
-            if vio == "pending":
-                vio = MonocularVO(start_pose=pose)
-            if vio is not None and vio != "pending":
-                try:
-                    pose, tracking_valid, _diag = vio.update(
-                        frame, pipeline.frames_processed / FPS_DEFAULT)
-                except Exception:
-                    tracking_valid = False
-            # If drone is stationary on desk (VIO not moved yet), use the known start pose
-            if not tracking_valid or pose is None:
-                pose = item[1]
-                tracking_valid = True
-            t = pipeline.frames_processed / FPS_DEFAULT
+            # Wall-clock scenario time (the real loop runs ~4-5 fps,
+            # not the 10 fps the frame counter assumed; tracks stayed
+            # "live" ~2x too long in wall time).
+            t = time.monotonic() - t0
+            # NO fallback: a failed VIO must never be papered over
+            # with the frozen start pose. The start pose is only the
+            # VIO initialisation pose; feeding it back as "tracking
+            # valid" validated the bridge on a fiction frame and
+            # emitted a garbage marker (2026-11-23 live run:
+            # scrambled skeleton, 2.2 m for a person 0.5 m away).
+            # With tracking invalid the bridge stays invalid and the
+            # viewer honestly shows "Tracking lost" until VIO
+            # initialises on real motion (takeoff + doorway flight).
+            vio, pose, tracking_valid = live_pose_step(vio, frame, pose, t)
             marker, info = pipeline.process_frame(
                 frame, pose, tracking_valid, t)
             state.update_from_pipeline(pipeline, marker, info,
@@ -941,12 +982,24 @@ def main(argv=None):
         except Exception:
             pass
         if flight_ctrl.tello:
-            try:
-                if flight_ctrl.status != "LANDED":
-                    log.info("Program exiting: landing drone safely...")
-                    flight_ctrl.tello.land()
-            except Exception:
-                pass
+            # Land on exit only if airborne and no command is in
+            # flight: holding the controller lock proves it is idle,
+            # so this cannot double-send with a landing already in
+            # progress (the original bug's land spam).
+            if flight_ctrl.lock.acquire(timeout=2.0):
+                try:
+                    if flight_ctrl.status != "LANDED":
+                        log.info("Program exiting: landing drone safely...")
+                        flight_ctrl.tello.land()
+                        flight_ctrl.status = "LANDED"
+                except Exception:
+                    pass
+                finally:
+                    flight_ctrl.lock.release()
+            else:
+                log.warning("Program exiting: a flight command is still "
+                            "in flight; drone left hovering -- land it "
+                            "from the Tello app.")
         source.close()
         pipeline.shutdown()
     return 0

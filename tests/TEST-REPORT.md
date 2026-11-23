@@ -367,7 +367,7 @@ position drift while hovering. The ground-test drift is not the
 60 cm marker budget, but the hover phase is where the real test
 will live or die.
 
-## Extended tests — 2026-11-23 13:31:08 (UTC)
+## Extended tests — 2026-11-23 19:59:55 (UTC)
 
 New rooms/places, multi-drone (4 and 5 drones), and adversarial scenarios on top of the original 7. Thresholds unchanged from SPEC.md (detection >= 90%, mean joint error <= 60 cm, mean |distance error| <= 60 cm, skeleton scale error <= 25%, false markers = 0, marker-after-loss = 0, fused error <= best single-drone error).
 
@@ -378,7 +378,7 @@ Scenarios run: s1_basic, s2_offcentre, s3_close, s4_dim, s5_tracking_loss, s6_no
 - Python 3.12.3
 - opencv 5.1.0, numpy 2.5.4, ultralytics 8.4.216
 - Weights: `yolov8n-pose.pt` (in `wall-marker/`), detector conf 0.5, imgsz 640, CPU
-- Total runtime: 1434.0 s (23.9 min), one inference process
+- Total runtime: 724.0 s (12.1 min), one inference process
 - Person billboard: largest person detection from ultralytics' bundled `bus.jpg`, cut out with grabCut (mask eroded 2x), pasted at the TRUE projected position. Two-person scenarios paste the same cutout twice at different positions (identical twins — documented).
 - Room model: SPEC.md default (wall z = 3.0 m, doorway x in [-0.6, 0.6] m, phone fixed at (0, 1.5, 0)) unless a scenario overrides it (see its description). Projection `v = cy - fy*y/z`.
 
@@ -439,7 +439,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -0 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 191.5 ms/frame mean (5.2 fps).
+- Pipeline latency (process_frame, incl. detector): 89.1 ms/frame mean (11.2 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -456,7 +456,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 2, 'triangulation': 32}; first triangulation frame: 22.
 - Measured depth bias (estimated - true foot depth): bbox-height +1 cm (n=2); triangulation -3 cm (n=32).
 - Mean signed distance error (marker - GT): -1 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 200.0 ms/frame mean (5.0 fps).
+- Pipeline latency (process_frame, incl. detector): 100.0 ms/frame mean (10.0 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -473,7 +473,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
 - Measured depth bias (estimated - true foot depth): bbox-height -7 cm (n=1); triangulation +2 cm (n=37).
 - Mean signed distance error (marker - GT): -13 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 196.8 ms/frame mean (5.1 fps).
+- Pipeline latency (process_frame, incl. detector): 90.4 ms/frame mean (11.1 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -490,7 +490,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height +2 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 218.2 ms/frame mean (4.6 fps).
+- Pipeline latency (process_frame, incl. detector): 112.5 ms/frame mean (8.9 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -507,7 +507,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -0 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 172.9 ms/frame mean (5.8 fps).
+- Pipeline latency (process_frame, incl. detector): 88.8 ms/frame mean (11.3 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -526,7 +526,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {}; first triangulation frame: None.
 - Measured depth bias (estimated - true foot depth): bbox-height n/a; triangulation n/a.
 - Mean signed distance error (marker - GT): n/a (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 189.6 ms/frame mean (5.3 fps).
+- Pipeline latency (process_frame, incl. detector): 97.9 ms/frame mean (10.2 fps).
 - check `false_markers`: PASS
 - check `marker_while_bridge_invalid`: PASS
 - **Result: PASS**
@@ -540,7 +540,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -4 cm (n=5); triangulation -2 cm (n=23).
 - Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 424.0 ms/frame mean (2.4 fps).
+- Pipeline latency (process_frame, incl. detector): 205.1 ms/frame mean (4.9 fps).
 - Fused mean joint error, hover frames 25-59: 34.1 cm; single-drone mean joint error over the same frames: drone1 36.4 cm, drone2 37.6 cm; best single: 36.4 cm. Single-drone detection (hover frames): {'drone1': {'detected': 35, 'in_view': 35}, 'drone2': {'detected': 27, 'in_view': 27}}.
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
@@ -559,7 +559,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
 - Measured depth bias (estimated - true foot depth): bbox-height -4 cm (n=1); triangulation -0 cm (n=37).
 - Mean signed distance error (marker - GT): -12 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 193.5 ms/frame mean (5.2 fps).
+- Pipeline latency (process_frame, incl. detector): 88.7 ms/frame mean (11.3 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -576,7 +576,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 1, 'triangulation': 36}; first triangulation frame: 24.
 - Measured depth bias (estimated - true foot depth): bbox-height -3 cm (n=1); triangulation +1 cm (n=36).
 - Mean signed distance error (marker - GT): -10 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 227.9 ms/frame mean (4.4 fps).
+- Pipeline latency (process_frame, incl. detector): 97.3 ms/frame mean (10.3 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -593,7 +593,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 25}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -2 cm (n=5); triangulation -3 cm (n=25).
 - Mean signed distance error (marker - GT): -10 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 201.9 ms/frame mean (5.0 fps).
+- Pipeline latency (process_frame, incl. detector): 98.1 ms/frame mean (10.2 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -610,7 +610,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 1, 'triangulation': 38}; first triangulation frame: 20.
 - Measured depth bias (estimated - true foot depth): bbox-height +21 cm (n=1); triangulation +1 cm (n=38).
 - Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 180.7 ms/frame mean (5.5 fps).
+- Pipeline latency (process_frame, incl. detector): 87.6 ms/frame mean (11.4 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -627,7 +627,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -2 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 198.6 ms/frame mean (5.0 fps).
+- Pipeline latency (process_frame, incl. detector): 97.3 ms/frame mean (10.3 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -645,7 +645,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {}; first triangulation frame: None.
 - Measured depth bias (estimated - true foot depth): bbox-height n/a; triangulation n/a.
 - Mean signed distance error (marker - GT): n/a (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 213.4 ms/frame mean (4.7 fps).
+- Pipeline latency (process_frame, incl. detector): 84.9 ms/frame mean (11.8 fps).
 - check `false_markers`: PASS
 - check `marker_while_bridge_invalid`: PASS
 - **Result: PASS**
@@ -659,7 +659,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height +0 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 184.3 ms/frame mean (5.4 fps).
+- Pipeline latency (process_frame, incl. detector): 72.0 ms/frame mean (13.9 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -676,7 +676,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 184.2 ms/frame mean (5.4 fps).
+- Pipeline latency (process_frame, incl. detector): 79.2 ms/frame mean (12.6 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -693,7 +693,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 21, 'triangulation': 16}; first triangulation frame: 44.
 - Measured depth bias (estimated - true foot depth): bbox-height +7 cm (n=21); triangulation +27 cm (n=16).
 - Mean signed distance error (marker - GT): -16 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 187.9 ms/frame mean (5.3 fps).
+- Pipeline latency (process_frame, incl. detector): 92.4 ms/frame mean (10.8 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -710,7 +710,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height +4 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 199.3 ms/frame mean (5.0 fps).
+- Pipeline latency (process_frame, incl. detector): 98.2 ms/frame mean (10.2 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -727,7 +727,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 13, 'triangulation': 29}; first triangulation frame: 20.
 - Measured depth bias (estimated - true foot depth): bbox-height +11 cm (n=13); triangulation +5 cm (n=29).
 - Mean signed distance error (marker - GT): +5 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 200.9 ms/frame mean (5.0 fps).
+- Pipeline latency (process_frame, incl. detector): 88.2 ms/frame mean (11.3 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -744,7 +744,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 23, 'triangulation': 14}; first triangulation frame: 24.
 - Measured depth bias (estimated - true foot depth): bbox-height +2 cm (n=23); triangulation -5 cm (n=14).
 - Mean signed distance error (marker - GT): +13 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 180.7 ms/frame mean (5.5 fps).
+- Pipeline latency (process_frame, incl. detector): 87.2 ms/frame mean (11.5 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -762,7 +762,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 3, 'triangulation': 34}; first triangulation frame: 25.
 - Measured depth bias (estimated - true foot depth): bbox-height -32 cm (n=3); triangulation -25 cm (n=34).
 - Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 184.1 ms/frame mean (5.4 fps).
+- Pipeline latency (process_frame, incl. detector): 100.8 ms/frame mean (9.9 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -780,7 +780,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 1, 'triangulation': 32}; first triangulation frame: 24.
 - Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=1); triangulation -4 cm (n=32).
 - Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 196.1 ms/frame mean (5.1 fps).
+- Pipeline latency (process_frame, incl. detector): 102.6 ms/frame mean (9.7 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -798,7 +798,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 218.3 ms/frame mean (4.6 fps).
+- Pipeline latency (process_frame, incl. detector): 100.9 ms/frame mean (9.9 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -817,7 +817,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 214.6 ms/frame mean (4.7 fps).
+- Pipeline latency (process_frame, incl. detector): 102.4 ms/frame mean (9.8 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -834,7 +834,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
 - Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
 - Measured depth bias (estimated - true foot depth): bbox-height -6 cm (n=1); triangulation +0 cm (n=37).
 - Mean signed distance error (marker - GT): -12 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 210.2 ms/frame mean (4.8 fps).
+- Pipeline latency (process_frame, incl. detector): 95.9 ms/frame mean (10.4 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -972,7 +972,7 @@ The original 7 scenarios were re-run in this extended run. Rendering and inferen
   - check `no_distance_pills`: PASS
   - check `zero_skeleton_pixels`: PASS
   - check `no_console_errors`: PASS
-  - viewer canvas 800x600: 0 non-transparent pixels after 60 s of none events; markers held: 0; distance pills: 0; last SSE event 553 ms before the read; console errors: none.
+  - viewer canvas 800x600: 0 non-transparent pixels after 60 s of none events; markers held: 0; distance pills: 0; last SSE event 489 ms before the read; console errors: none.
 - **Result: PASS**
 
 ## Found and fixed (extended suite)
@@ -1036,10 +1036,10 @@ VIO pose drift is reported against the 60 cm joint-error budget (SPEC.md) — th
 
 | Scenario (VIO) | VIO valid | Drift mean | Drift max | Yaw err mean | Yaw err max | Yaw err, marker frames | PnP inliers mean/min | VIO fps | Pipeline fps | Detection | Mean joint err | Mean |dist err| | Markers | Bridge-invalid markers | Result |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| s1_basic | 56/60 | 6.7 cm | 21.1 cm | 1.0 deg | 7.6 deg | 3.3 deg | 64/0 | 7.1 | 3.1 | 100% (12/12) | 40.5 cm | 6.0 cm | 10 | 0 | PASS |
-| s23_blank_door | 56/60 | 5.4 cm | 14.7 cm | 0.9 deg | 3.2 deg | 1.1 deg | 57/0 | 9.4 | 3.3 | 100% (13/13) | 32.6 cm | 5.7 cm | 11 | 0 | PASS |
-| s20_fast | 56/60 | 8.3 cm | 71.5 cm | 0.7 deg | 7.2 deg | 2.7 deg | 30/0 | 9.3 | 2.9 | 100% (10/10) | 36.1 cm | 7.5 cm | 11 | 0 | PASS |
-| s4_dim | 56/60 | 3.8 cm | 15.0 cm | 0.7 deg | 5.1 deg | 2.2 deg | 55/0 | 7.1 | 2.2 | 100% (12/12) | 36.3 cm | 6.8 cm | 10 | 0 | PASS |
+| s1_basic | 56/60 | 6.7 cm | 21.1 cm | 1.0 deg | 7.6 deg | 3.3 deg | 64/0 | 8.4 | 4.9 | 100% (12/12) | 40.5 cm | 6.0 cm | 10 | 0 | PASS |
+| s23_blank_door | 56/60 | 5.4 cm | 14.7 cm | 0.9 deg | 3.2 deg | 1.1 deg | 57/0 | 12.3 | 6.7 | 100% (13/13) | 32.6 cm | 5.7 cm | 11 | 0 | PASS |
+| s20_fast | 56/60 | 8.3 cm | 71.5 cm | 0.7 deg | 7.2 deg | 2.7 deg | 30/0 | 13.5 | 6.7 | 100% (10/10) | 36.1 cm | 7.5 cm | 11 | 0 | PASS |
+| s4_dim | 56/60 | 3.8 cm | 15.0 cm | 0.7 deg | 5.1 deg | 2.2 deg | 55/0 | 12.9 | 6.5 | 100% (12/12) | 36.3 cm | 6.8 cm | 10 | 0 | PASS |
 
 ### VIO fix round 3 — constrained PnP (round 2 vs round 3)
 
@@ -1077,7 +1077,7 @@ Round 2 (2026-11-23) left joint error over the 60 cm budget in s1_basic (71.8 cm
 - check `marker_while_bridge_invalid`: PASS
 - **Result: PASS**
 
-- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 6.7 cm, max 21.1 cm, final 21.1 cm; yaw error mean 1.0 deg, max 7.6 deg, on marker frames 3.3 deg; PnP inliers mean 64, min 0; VIO step 141.2 ms/frame (7.1 fps); full pipeline with VIO 318.3 ms/frame (3.1 fps).
+- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 6.7 cm, max 21.1 cm, final 21.1 cm; yaw error mean 1.0 deg, max 7.6 deg, on marker frames 3.3 deg; PnP inliers mean 64, min 0; VIO step 119.0 ms/frame (8.4 fps); full pipeline with VIO 202.5 ms/frame (4.9 fps).
 
 ### s23_blank_door (VIO) — featureless blank wall at the doorway (no posters on the shared wall), wall 2.5 m, person 3.6 m (z)
 
@@ -1095,7 +1095,7 @@ Round 2 (2026-11-23) left joint error over the 60 cm budget in s1_basic (71.8 cm
 - check `marker_while_bridge_invalid`: PASS
 - **Result: PASS**
 
-- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 5.4 cm, max 14.7 cm, final 14.7 cm; yaw error mean 0.9 deg, max 3.2 deg, on marker frames 1.1 deg; PnP inliers mean 57, min 0; VIO step 106.9 ms/frame (9.4 fps); full pipeline with VIO 305.5 ms/frame (3.3 fps).
+- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 5.4 cm, max 14.7 cm, final 14.7 cm; yaw error mean 0.9 deg, max 3.2 deg, on marker frames 1.1 deg; PnP inliers mean 57, min 0; VIO step 81.3 ms/frame (12.3 fps); full pipeline with VIO 149.5 ms/frame (6.7 fps).
 
 ### s20_fast (VIO) — fast drone: fast approach + fast wide hover (amp 0.9 m, period 1.2 s)
 
@@ -1113,7 +1113,7 @@ Round 2 (2026-11-23) left joint error over the 60 cm budget in s1_basic (71.8 cm
 - check `marker_while_bridge_invalid`: PASS
 - **Result: PASS**
 
-- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 8.3 cm, max 71.5 cm, final 64.2 cm; yaw error mean 0.7 deg, max 7.2 deg, on marker frames 2.7 deg; PnP inliers mean 30, min 0; VIO step 107.5 ms/frame (9.3 fps); full pipeline with VIO 339.4 ms/frame (2.9 fps).
+- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 8.3 cm, max 71.5 cm, final 64.2 cm; yaw error mean 0.7 deg, max 7.2 deg, on marker frames 2.7 deg; PnP inliers mean 30, min 0; VIO step 74.2 ms/frame (13.5 fps); full pipeline with VIO 149.9 ms/frame (6.7 fps).
 
 ### s4_dim (VIO) — light 0.5, person 4.5 m
 
@@ -1131,7 +1131,7 @@ Round 2 (2026-11-23) left joint error over the 60 cm budget in s1_basic (71.8 cm
 - check `marker_while_bridge_invalid`: PASS
 - **Result: PASS**
 
-- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 3.8 cm, max 15.0 cm, final 15.0 cm; yaw error mean 0.7 deg, max 5.1 deg, on marker frames 2.2 deg; PnP inliers mean 55, min 0; VIO step 141.1 ms/frame (7.1 fps); full pipeline with VIO 444.8 ms/frame (2.2 fps).
+- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 3.8 cm, max 15.0 cm, final 15.0 cm; yaw error mean 0.7 deg, max 5.1 deg, on marker frames 2.2 deg; PnP inliers mean 55, min 0; VIO step 77.3 ms/frame (12.9 fps); full pipeline with VIO 154.5 ms/frame (6.5 fps).
 
 ### Honest limits — VIO (what this still does NOT prove)
 
@@ -1151,28 +1151,28 @@ Voting rule (server/depth.py: ``fuse_with_model_votes``): the model NEVER replac
 
 | Model | Params | Weights | Licence | CPU inference (this machine) |
 |---|---|---|---|---|
-| Depth Anything V2 Small | 24.8M | 95 MB | Apache-2.0 | 256x192: 960 ms; 336x252: 1228 ms; 518x388: 2975 ms (single frame, process-default thread count; the pipeline uses 256x192) |
+| Depth Anything V2 Small | 24.8M | 95 MB | Apache-2.0 | 256x192: 425 ms; 336x252: 761 ms; 518x388: 1661 ms (single frame, process-default thread count; the pipeline uses 256x192) |
 | ZoeDepth (nyu-kitti) | ~345M (DPT-Large) | ~1.37 GB fp32 | MIT | not measured — excluded on size / RAM (see above) |
 
-Model calls / votes over the whole depth-model suite: {'n_calls': 61, 'n_votes': 56, 'ms_mean': 697.4128671428831, 'ms_min': 314.3046579998554, 'ms_max': 1282.8092889999425}.
+Model calls / votes over the whole depth-model suite: {'n_calls': 61, 'n_votes': 56, 'ms_mean': 455.73383989284366, 'ms_min': 239.5500229999925, 'ms_max': 1167.5120889999562}.
 
 ### Baseline (two methods) vs model voter — same scenarios, GT poses
 
 | Scenario | Joint err base / +model | |Dist err| base / +model | Model depth err mean |worst| (n) | Voter changed (frames) | Pipeline fps base / +model | Result base / +model |
 |---|---|---|---|---|---|---|
-| s1_basic | 36.1 cm / 36.1 cm | 8.7 cm / 8.7 cm | +12 cm | 54 cm (n=28) | 0 | 5.2 / 4.9 | PASS / PASS |
-| s2_offcentre | 35.5 cm / 35.5 cm | 0.9 cm / 0.9 cm | +7 cm | 68 cm (n=19) | 0 | 5.0 / 5.1 | PASS / PASS |
-| s3_close | 37.6 cm / 37.6 cm | 13.4 cm / 13.4 cm | +21 cm | 56 cm (n=29) | 0 | 5.1 / 4.4 | PASS / PASS |
-| s4_dim | 35.6 cm / 35.6 cm | 8.0 cm / 8.0 cm | +11 cm | 47 cm (n=29) | 0 | 4.6 / 4.8 | PASS / PASS |
-| s13_dim_noise | 36.8 cm / 36.8 cm | 8.9 cm / 8.9 cm | -2 cm | 42 cm (n=29) | 0 | 5.4 / 5.9 | PASS / PASS |
-| s14_glare | 36.4 cm / 36.4 cm | 8.4 cm / 8.4 cm | +13 cm | 48 cm (n=29) | 0 | 5.4 / 3.6 | PASS / PASS |
-| s15_occluded | 42.1 cm / 42.1 cm | 16.3 cm / 16.3 cm | -4 cm | 132 cm (n=29) | 0 | 5.3 / 3.0 | PASS / PASS |
-| s18_moving | 48.1 cm / 48.1 cm | 12.6 cm / 12.6 cm | +30 cm | 78 cm (n=29) | 0 | 5.5 / 2.5 | PASS / PASS |
-| s11_large_room_far | 31.9 cm / 31.9 cm | 6.7 cm / 6.7 cm | +48 cm | 71 cm (n=29) | 0 | 5.5 / 3.3 | PASS / PASS |
-| s20_fast | 35.2 cm / 35.2 cm | 7.4 cm / 7.4 cm | +13 cm | 78 cm (n=25) | 0 | 5.1 / 2.8 | PASS / PASS |
-| s23_blank_door | 36.0 cm / 36.0 cm | 11.8 cm / 11.8 cm | +35 cm | 81 cm (n=29) | 0 | 4.8 / 2.2 | PASS / PASS |
-| s17_edge | 32.6 cm / 32.6 cm | 4.5 cm / 4.5 cm | n/a | 0 | 5.0 / 2.2 | PASS / PASS |
-| s7_two_drones | 34.1 cm / 34.1 cm | 6.6 cm / 6.6 cm | +10 cm | 67 cm (n=21) | 0 | 2.4 / 1.9 | PASS / PASS |
+| s1_basic | 36.1 cm / 36.1 cm | 8.7 cm / 8.7 cm | +14 cm | 55 cm (n=27) | 0 | 11.2 / 7.8 | PASS / PASS |
+| s2_offcentre | 35.5 cm / 35.5 cm | 0.9 cm / 0.9 cm | +8 cm | 68 cm (n=18) | 0 | 10.0 / 9.9 | PASS / PASS |
+| s3_close | 37.6 cm / 37.6 cm | 13.4 cm / 13.4 cm | +22 cm | 57 cm (n=28) | 0 | 11.1 / 10.0 | PASS / PASS |
+| s4_dim | 35.6 cm / 35.6 cm | 8.0 cm / 8.0 cm | +10 cm | 47 cm (n=28) | 0 | 8.9 / 9.8 | PASS / PASS |
+| s13_dim_noise | 36.8 cm / 36.8 cm | 8.9 cm / 8.9 cm | -2 cm | 42 cm (n=29) | 0 | 13.9 / 11.6 | PASS / PASS |
+| s14_glare | 36.4 cm / 36.4 cm | 8.4 cm / 8.4 cm | +14 cm | 50 cm (n=29) | 0 | 12.6 / 10.2 | PASS / PASS |
+| s15_occluded | 42.1 cm / 42.1 cm | 16.3 cm / 16.3 cm | +3 cm | 132 cm (n=27) | 0 | 10.8 / 7.5 | PASS / PASS |
+| s18_moving | 48.1 cm / 48.1 cm | 12.6 cm / 12.6 cm | +30 cm | 78 cm (n=28) | 0 | 11.5 / 8.7 | PASS / PASS |
+| s11_large_room_far | 31.9 cm / 31.9 cm | 6.7 cm / 6.7 cm | +48 cm | 71 cm (n=28) | 0 | 11.4 / 9.2 | PASS / PASS |
+| s20_fast | 35.2 cm / 35.2 cm | 7.4 cm / 7.4 cm | +11 cm | 78 cm (n=24) | 0 | 9.7 / 9.1 | PASS / PASS |
+| s23_blank_door | 36.0 cm / 36.0 cm | 11.8 cm / 11.8 cm | +35 cm | 81 cm (n=28) | 0 | 10.4 / 9.6 | PASS / PASS |
+| s17_edge | 32.6 cm / 32.6 cm | 4.5 cm / 4.5 cm | n/a | 0 | 11.3 / 9.0 | PASS / PASS |
+| s7_two_drones | 34.1 cm / 34.1 cm | 6.6 cm / 6.6 cm | +9 cm | 67 cm (n=19) | 0 | 4.9 / 3.2 | PASS / PASS |
 
 Per-scenario detail (model runs) follows; the baseline detail is in the extended-results section above. The model-vote error is the floor-anchored model depth minus the GT foot depth, pooled over frames where a vote was available — it is the model's own error, not the fused pipeline error.
 
@@ -1185,8 +1185,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -0 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 204.9 ms/frame mean (4.9 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +12 cm, mean |err| 20 cm, worst 54 cm (n=28 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 127.5 ms/frame mean (7.8 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +14 cm, mean |err| 23 cm, worst 55 cm (n=27 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1203,8 +1203,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 2, 'triangulation': 32}; first triangulation frame: 22.
 - Measured depth bias (estimated - true foot depth): bbox-height +1 cm (n=2); triangulation -3 cm (n=32).
 - Mean signed distance error (marker - GT): -1 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 194.8 ms/frame mean (5.1 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +7 cm, mean |err| 39 cm, worst 68 cm (n=19 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 101.0 ms/frame mean (9.9 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +8 cm, mean |err| 40 cm, worst 68 cm (n=18 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1221,8 +1221,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
 - Measured depth bias (estimated - true foot depth): bbox-height -7 cm (n=1); triangulation +2 cm (n=37).
 - Mean signed distance error (marker - GT): -13 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 225.1 ms/frame mean (4.4 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +21 cm, mean |err| 21 cm, worst 56 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 100.1 ms/frame mean (10.0 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +22 cm, mean |err| 22 cm, worst 57 cm (n=28 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1239,8 +1239,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height +2 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 210.2 ms/frame mean (4.8 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +11 cm, mean |err| 15 cm, worst 47 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 102.0 ms/frame mean (9.8 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +10 cm, mean |err| 15 cm, worst 47 cm (n=28 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1257,7 +1257,7 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height +0 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 170.6 ms/frame mean (5.9 fps).
+- Pipeline latency (process_frame, incl. detector): 86.0 ms/frame mean (11.6 fps).
 - Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean -2 cm, mean |err| 21 cm, worst 42 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
@@ -1275,8 +1275,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=5); triangulation -3 cm (n=31).
 - Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 278.8 ms/frame mean (3.6 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +13 cm, mean |err| 13 cm, worst 48 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 98.4 ms/frame mean (10.2 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +14 cm, mean |err| 15 cm, worst 50 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1293,8 +1293,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 21, 'triangulation': 16}; first triangulation frame: 44.
 - Measured depth bias (estimated - true foot depth): bbox-height +7 cm (n=21); triangulation +27 cm (n=16).
 - Mean signed distance error (marker - GT): -16 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 335.3 ms/frame mean (3.0 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean -4 cm, mean |err| 66 cm, worst 132 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 132.5 ms/frame mean (7.5 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +3 cm, mean |err| 60 cm, worst 132 cm (n=27 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1311,8 +1311,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 23, 'triangulation': 14}; first triangulation frame: 24.
 - Measured depth bias (estimated - true foot depth): bbox-height +2 cm (n=23); triangulation -5 cm (n=14).
 - Mean signed distance error (marker - GT): +13 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 403.9 ms/frame mean (2.5 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +30 cm, mean |err| 30 cm, worst 78 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 115.0 ms/frame mean (8.7 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +30 cm, mean |err| 30 cm, worst 78 cm (n=28 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1329,8 +1329,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 1, 'triangulation': 38}; first triangulation frame: 20.
 - Measured depth bias (estimated - true foot depth): bbox-height +21 cm (n=1); triangulation +1 cm (n=38).
 - Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 300.6 ms/frame mean (3.3 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +48 cm, mean |err| 48 cm, worst 71 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 108.8 ms/frame mean (9.2 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +48 cm, mean |err| 48 cm, worst 71 cm (n=28 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1347,8 +1347,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 1, 'triangulation': 32}; first triangulation frame: 24.
 - Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=1); triangulation -4 cm (n=32).
 - Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 361.6 ms/frame mean (2.8 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +13 cm, mean |err| 44 cm, worst 78 cm (n=25 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 110.4 ms/frame mean (9.1 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +11 cm, mean |err| 44 cm, worst 78 cm (n=24 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1365,8 +1365,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
 - Measured depth bias (estimated - true foot depth): bbox-height -6 cm (n=1); triangulation +0 cm (n=37).
 - Mean signed distance error (marker - GT): -12 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 464.7 ms/frame mean (2.2 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +35 cm, mean |err| 35 cm, worst 81 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 103.6 ms/frame mean (9.6 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +35 cm, mean |err| 35 cm, worst 81 cm (n=28 frames with a vote); voter changed the outcome on 0 frame(s).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1383,7 +1383,7 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 13, 'triangulation': 29}; first triangulation frame: 20.
 - Measured depth bias (estimated - true foot depth): bbox-height +11 cm (n=13); triangulation +5 cm (n=29).
 - Mean signed distance error (marker - GT): +5 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 464.4 ms/frame mean (2.2 fps).
+- Pipeline latency (process_frame, incl. detector): 110.7 ms/frame mean (9.0 fps).
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
 - check `distance_error`: PASS
@@ -1400,8 +1400,8 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
 - Measured depth bias (estimated - true foot depth): bbox-height -4 cm (n=5); triangulation -2 cm (n=23).
 - Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
-- Pipeline latency (process_frame, incl. detector): 529.5 ms/frame mean (1.9 fps).
-- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +10 cm, mean |err| 29 cm, worst 67 cm (n=21 frames with a vote); voter changed the outcome on 0 frame(s).
+- Pipeline latency (process_frame, incl. detector): 313.1 ms/frame mean (3.2 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +9 cm, mean |err| 31 cm, worst 67 cm (n=19 frames with a vote); voter changed the outcome on 0 frame(s).
 - Fused mean joint error, hover frames 25-59: 34.1 cm; single-drone mean joint error over the same frames: drone1 36.4 cm, drone2 37.6 cm; best single: 36.4 cm. Single-drone detection (hover frames): {'drone1': {'detected': 35, 'in_view': 35}, 'drone2': {'detected': 27, 'in_view': 27}}.
 - check `detection_rate`: PASS
 - check `joint_error`: PASS
@@ -1415,10 +1415,10 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 
 | Scenario (VIO) | VIO valid | Joint err VIO-only / VIO+model | |Dist err| VIO-only / VIO+model | Model err mean |worst| | Voter changed | Pipeline fps VIO-only / VIO+model | Result VIO-only / VIO+model |
 |---|---|---|---|---|---|---|---|
-| s1_basic | 56/60 | 40.5 cm / 40.5 cm | 6.0 cm / 6.0 cm | -3 cm | 13 cm (n=9) | 0 | 3.1 / 2.2 | PASS / PASS |
-| s23_blank_door | 56/60 | 32.6 cm / 32.6 cm | 5.7 cm / 5.7 cm | +15 cm | 31 cm (n=9) | 0 | 3.3 / 2.1 | PASS / PASS |
-| s20_fast | 56/60 | 36.1 cm / 36.1 cm | 7.5 cm / 7.5 cm | +9 cm | 35 cm (n=6) | 0 | 2.9 / 3.6 | PASS / PASS |
-| s4_dim | 56/60 | 36.3 cm / 36.3 cm | 6.8 cm / 6.8 cm | +1 cm | 16 cm (n=9) | 0 | 2.2 / 3.4 | PASS / PASS |
+| s1_basic | 56/60 | 40.5 cm / 40.5 cm | 6.0 cm / 6.0 cm | -3 cm | 13 cm (n=9) | 0 | 4.9 / 6.0 | PASS / PASS |
+| s23_blank_door | 56/60 | 32.6 cm / 32.6 cm | 5.7 cm / 5.7 cm | +15 cm | 31 cm (n=9) | 0 | 6.7 / 6.5 | PASS / PASS |
+| s20_fast | 56/60 | 36.1 cm / 36.1 cm | 7.5 cm / 7.5 cm | +9 cm | 35 cm (n=6) | 0 | 6.7 / 6.8 | PASS / PASS |
+| s4_dim | 56/60 | 36.3 cm / 36.3 cm | 6.8 cm / 6.8 cm | +1 cm | 16 cm (n=9) | 0 | 6.5 / 6.2 | PASS / PASS |
 
 ### s1_basic (VIO) — person 4.0 m from phone, centred, light 1.0
 
@@ -1497,205 +1497,85 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 - The background worker makes the model runs timing-dependent: which frames carry a vote depends on worker speed on the day, so the model-run numbers reproduce approximately, not exactly, unlike the deterministic baseline. The regression comparison above still reads the baseline (model-off) runs.
 - Latency is measured on this shared 1.5-CPU VM with the YOLO detector running concurrently; a real laptop (more cores, no shared-CPU throttle) will differ. The pipeline fps numbers are process_frame only (rendering excluded).
 
-## VIO improvement — calibration + third yaw (2026-11-23)
+## Live-path fixes — reconciliation with d89be655 (2026-11-24)
 
-Two separate pieces, built and measured independently after round 3
-left the 1-DoF yaw PnP fragile to prior error (a (yaw+2, pitch-1,
-roll+1) deg offset fails s1/s20/s4 at 80.0-93.9 cm). Test script:
-``tests/vp_yaw_test.py`` (three passes; it does NOT edit
-``tests/run_tests.py``). Full per-frame numbers:
-``tests/vp_yaw_results.json``.
+Local only, not pushed. The laptop live code (commit 0e8d507b) was merged
+into the local copy first, then the other AI's commit d89be655
+("Add SafeFlightController with thread-safe locking, debouncing, and
+flight HUD status") landed on top of it and changed only
+`server/main.py`. The local `FlightController` was dropped — there is
+ONE flight controller now, theirs, reviewed on its merits and kept.
 
-### Piece 1 — yaw calibration (tool + procedure, NOT a number)
+### SafeFlightController (d89be655) — kept, plus two completions
 
-``tools/calibrate_tello.py`` + ``docs/TELLO_CALIBRATION.md`` are a
-complete standalone §6.9 procedure (fly 1 m, integrate both ways,
-yaw mid-translation, yaw accuracy, height vs tape, VPS-blind,
-latency). The new part is the **yaw gate**: the script now reports
-yaw sigma AND doorway bias (mean signed yaw error during the
-doorway turn minus during straight flight) and prints a plain
-`YAW GATE: PASS/FAIL` verdict. **Pass criterion: sigma <= 1.5 deg
-AND |doorway bias| <= 1.5 deg, else the real test must NOT
-proceed.** Two real bugs in the write path were found and fixed
-while verifying it end-to-end (the dataclass had no `yaw_sigma_deg`
-field; the constructor was passed a non-existent
-`state_latency_s`). Self-test (synthetic data, venv python, exit
-0): dm/s/global recovered (err 0.090 m), cm/s/body recovered (err
-0.014 m); yaw sigma 1.0 deg -> recovered RMS 0.89 deg, bias 0.54
-deg, gate PASS; sigma 2.5 deg -> RMS 2.31 deg, bias 1.28 deg, gate
-FAIL; sigma 1.0 deg + bias +3.0 deg -> RMS 2.47 deg, bias 3.44 deg,
-gate FAIL. End-to-end CLI verified on synthetic recordings (PASS
-at sigma 1.0, FAIL at sigma 2.5; `calibration.json` written).
-`tests/test_tello_state.py` still 9/9 after the dataclass change.
-**Honest limit: the REAL calibration awaits a real drone — no real
-calibration is claimed here.** The results table in
-`docs/TELLO_CALIBRATION.md` stays empty until then.
+- Serializes: one lock, non-blocking acquire, a busy command is
+  skipped with a warning — no concurrent movement. Verified.
+- Gates movement: moves run only when status is HOVERING, set only
+  after a successful takeoff; a failed takeoff resets status to
+  LANDED, so later moves are refused. Verified.
+- Completion 1 — land idempotency: the land branch returned no
+  early-exit when already LANDED, so a repeat `[L]` after landing
+  re-sent `land`. Now returns early; land is sent exactly once.
+- Completion 2 — "Not joystick" guidance: on a takeoff error
+  containing "not joystick" the log now says plainly to force-close
+  the Tello app on the phone, reboot the drone, restart the server
+  and press `[T]` again. A retry after fixing the app is accepted
+  (no session block).
+- Moved to module level so tests can import it (was nested inside
+  `main()`); behaviour unchanged. The `finally` block no longer
+  calls `tello.land()` directly — it lands only while holding the
+  controller lock and only if airborne, so it cannot double-send
+  with a landing already in flight.
 
-### Piece 2 — third yaw measurement: vanishing-point / Manhattan compass
+### Marker-format fix (BUG 2) — the part d89be655 did not touch
 
-New module ``server/vp_yaw.py`` (``estimate_vp_yaw(frame, K,
-yaw_hint_deg, pitch_roll_deg) -> dict | None``). LSD lines (the
-venv's OpenCV 5.1.0 exposes LSD — no new dependency), vertical VP
-by RANSAC + SVD refine, horizontal VPs by sequential RANSAC
-(horizon + orthogonality checks), yaw from the VP directions. The
-magnetometer yaw is required as a hint: a horizontal VP is the
-world X axis or the world Z axis, 90 deg apart, and both
-assignments are self-consistent.
+- Root cause: the live loop overrode the VIO verdict —
+  `if not tracking_valid or pose is None: pose = item[1];
+  tracking_valid = True` — and `TelloVideoSource.read()` returned
+  the frozen start pose with `tracking_valid=True` on every frame.
+  The bridge validated on that fiction frame and the detected
+  person's joints were transformed into it, so the viewer (which
+  expects 17 3D joints in the phone frame, COCO order, +Y up)
+  exploded the projection — the scrambled skeleton of the 2026-11-23
+  live run (2.2 m shown for a person 0.5 m away). The same scrambled
+  skeleton reproduces on a local run; same sender bug, same fix.
+- Fix: new `live_pose_step()` in `server/main.py` — the VIO verdict
+  passes through honestly, mirroring `tests/virtual_server.py`; the
+  start pose is only the VIO initialisation pose, never returned as
+  valid. `server/video_source.py` now returns `tracking_valid=False`
+  (the source measures no pose). With tracking invalid the bridge
+  stays invalid and the viewer honestly shows "Tracking lost" until
+  VIO initialises on real motion. No marker without a bridge, ever.
+- Secondary fix in the same loop: scenario time is now wall-clock
+  (`time.monotonic()`); the frame counter assumed 10 fps while the
+  real loop runs ~4-5 fps, so tracks stayed "live" ~2x too long.
 
-Two fixes found by measurement, both wrong in the first build:
-- **Axis angles are mod 180, not mod 360.** A line's vanishing
-  point is the same for both directions along the line. The first
-  build averaged the two assignment yaws with a plain circular
-  mean; the wrong assignment's two yaws are 180 deg apart, whose
-  circular mean is garbage — it showed up as exactly +-90 deg yaw
-  errors on half the frames. Fixed by normalising each axis angle
-  to (-90, 90], averaging assignment yaws only on the same mod-180
-  branch, and expanding to mod-360 aliases before the hint picks.
-- **The vertical VP is validated against the pitch/roll prior.**
-  During the doorway turn, world-Z lines run toward the camera and
-  look near-vertical in the image, so the vertical-VP RANSAC
-  latched onto the Z VP (measured: the found "vertical VP" was
-  5-10 deg from the true Z axis and 90-100 deg from true Y in s1
-  f19/f22 and s23 f8/f25, sending the yaw 10-45 deg wrong). A
-  vertical VP more than 10 deg from the prior up direction is
-  rejected: gravity comes from the prior and no lines are removed
-  as "vertical" (the horizon check filters true vertical lines
-  out of the horizontal VPs instead). The attitude prior is trusted
-  here — the round-3 fragility was yaw, not pitch/roll.
-- A horizontal VP needs >= 12 supporting lines (raised from 5):
-  in the s4 end frames a VP from 6-9 spurious lines gave a yaw
-  27-40 deg wrong; every good frame has >= 29.
+### SSE disconnect (BUG 3)
 
-#### Pass 1 — VP yaw vs GT yaw per frame (GT hint + GT pitch/roll)
+- `_serve_sse` caught `(BrokenPipeError, ConnectionResetError)` but
+  not `ConnectionAbortedError` (WinError 10053) — it escaped and
+  spammed a traceback. Now catches `OSError` and closes quietly.
 
-| Scenario | Avail | Err mean | |Err| mean | Err std | Err p90 | Err max | 2-VP frames | Vert VP rejected | Gravity vp / prior | ms/frame |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| s1_basic | 44/60 (73%) | -0.08 deg | 0.74 deg | 1.20 deg | 2.03 deg | 3.24 deg | 19 | 27 | 17 / 27 | 60.9 (p90 75.6) |
-| s23_blank_door | 49/60 (82%) | -0.03 deg | 0.61 deg | 0.94 deg | 1.49 deg | 2.76 deg | 26 | 45 | 3 / 46 | 64.4 (p90 78.8) |
-| s20_fast | 42/60 (70%) | -0.06 deg | 0.67 deg | 1.14 deg | 2.11 deg | 3.41 deg | 19 | 26 | 16 / 26 | 63.6 (p90 83.9) |
-| s4_dim | 36/60 (60%) | +0.18 deg | 0.49 deg | 0.95 deg | 1.89 deg | 3.29 deg | 19 | 20 | 16 / 20 | 59.5 (p90 76.7) |
+### Measured verification (2026-11-24, ground/virtual only, no flight)
 
-Pooled VP yaw sigma = **1.07 deg** (used as sigma_vp in the fusion
-passes). The VP yaw is unbiased (mean error -0.08 to +0.18 deg) and
-accurate to ~0.5-0.7 deg mean absolute error — better than the
-magnetometer prior (sigma ~2 deg). Availability is 60-82%: the
-missing frames are mid-turn (f31-34, f48-57 in s1, where the camera
-looks at the doorway wall with too few horizontal lines) and the s4
-end frames (correctly rejected, not wrong). The blank-door scenario
-s23 has the HIGHEST availability (82%) — the feared "no lines at
-the blank door" did not happen; the room's other walls/floor still
-supply lines. The vertical VP is rejected most of the time (27-45
-of the available frames), so gravity comes from the prior more
-often than from vision — the VP yaw itself is still vision, the
-prior only supplies the up direction.
-
-Half-resolution (480x360, K halved) is essentially free: same
-availability (44/49/42/36), |err| mean 0.54-0.76 deg (vs 0.49-0.74
-full-res), max 2.35-3.41 deg, at 36-39 ms/frame (vs 59-64). A real
-integration can run it half-res.
-
-Pass 1b (noisy prior: hint = GT yaw + N(0, 2 deg), pitch/roll = GT
-+ N(0, 1 deg)): avail 40-46/60, |err| mean 0.52-0.68 deg, max
-1.91-4.01 deg. The VP measurement does NOT depend on a perfect
-prior.
-
-#### Pass 2 — fusion into the VIO prior (clean prior)
-
-The run_vio_scenario loop replicated with a FusedPrior (a
-StatePrior subclass, test-script only) whose R_prior(t) is the
-circular 1/sigma^2-weighted mean of the magnetometer yaw and the
-VP yaw (sigma_prior 2 deg, sigma_vp 1.07 deg), gated to fuse only
-when |VP yaw - prior yaw| < 10 deg. Joint error vs the round-3
-VIO baseline (60 cm budget):
-
-| Scenario | Joint, fusion / round-3 baseline | Change | Detection | VIO valid | Drift mean | Yaw err mean (marker frames) | Pipeline fps | VP avail / fused / gate fired | VP yaw |err| mean / max | Result |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| s1_basic | 56.0 cm / 40.5 cm | +15.5 cm | 100% | 56/60 | 7.5 cm | 0.94 deg (3.41 deg) | 3.5 | 44 / 39 / 0 | 0.73 / 3.29 deg | PASS |
-| s23_blank_door | 46.6 cm / 32.6 cm | +14.0 cm | 100% | 56/60 | 5.5 cm | 0.74 deg (1.12 deg) | 4.3 | 50 / 45 / 0 | 0.61 / 2.31 deg | PASS |
-| s20_fast | 34.8 cm / 36.1 cm | -1.3 cm | 100% | 56/60 | 6.0 cm | 0.86 deg (3.37 deg) | 4.4 | 42 / 37 / 0 | 0.67 / 3.37 deg | PASS |
-| s4_dim | 34.3 cm / 36.3 cm | -2.0 cm | 100% | 56/60 | 4.2 cm | 0.67 deg (1.93 deg) | 4.1 | 37 / 32 / 0 | 0.54 / 3.33 deg | PASS |
-
-**The fusion does NOT help on a clean prior: joint error is worse
-on average (+6.6 cm; s1 +15.5, s23 +14.0) and the VIO yaw error is
-unchanged (0.67-0.94 deg vs 0.7-1.0 deg round-3).** The VIO's
-output yaw is vision-dominated, so a better prior yaw does not
-propagate — the fusion perturbs the PnP without improving it, and
-the joint-error change is VIO-path sensitivity, not a VP effect.
-The gate never fired (0/0/0/0): on a clean prior the VP yaw never
-disagrees with the prior by >= 10 deg, so the gate is a
-spurious-VP guard, not a bad-prior detector.
-
-#### Pass 3 — bad-prior rescue (prior offset yaw+2, pitch-1, roll+1)
-
-Same fusion, packets offset before buffering (the round-3
-fragility case). The VP yaw is computed from the frame, so it is
-unperturbed by the packet offset. Joint error vs the fragile
-baseline (60 cm budget):
-
-| Scenario | Joint, fusion / fragile baseline | Change | Detection | VIO valid | Drift mean | Yaw err mean (marker frames) | Pipeline fps | VP avail / fused / gate fired | Result |
-|---|---|---|---|---|---|---|---|---|---|
-| s1_basic | 60.2 cm / 80.0 cm | -19.8 cm | 100% | 56/60 | 20.3 cm | 1.49 deg (6.63 deg) | 4.5 | 43 / 38 / 0 | FAIL (by 0.2 cm) |
-| s23_blank_door | 36.5 cm / 93.9 cm | -57.4 cm | 100% | 56/60 | 12.7 cm | 0.63 deg (1.03 deg) | 4.4 | 48 / 43 / 0 | PASS |
-| s20_fast | 54.9 cm / 76.4 cm | -21.5 cm | 100% | 56/60 | 22.0 cm | 2.43 deg (10.86 deg) | 4.5 | 42 / 37 / 0 | PASS |
-| s4_dim | 47.6 cm / 79.8 cm | -32.2 cm | 100% | 56/60 | 7.4 cm | 1.44 deg (4.01 deg) | 4.1 | 43 / 38 / 0 | PASS |
-
-**The fusion DOES rescue a bad prior in 3 of 4 scenarios**
-(s23 93.9 -> 36.5, s20 76.4 -> 54.9, s4 79.8 -> 47.6 cm), but
-**s1 still fails at 60.2 cm — by 0.2 cm.** The VP yaw fixes yaw
-only; the pitch/roll offsets (-1 deg, +1 deg) still corrupt the
-1-DoF PnP (yaw error on marker frames 6.63 deg in s1, 10.86 deg in
-s20; drift 20-22 cm vs 4-8 cm on a clean prior). A yaw-only third
-measurement cannot fully rescue a three-axis prior error.
-
-#### Wiring decision: DO NOT wire the fusion into server/vio.py
-
-The continuous per-frame fusion is NOT wired in (no change to
-``server/vio.py``; the default pipeline is the round-3 yaw1dof
-PnP). It does not measure clearly better: on a clean prior it is
-worse on average (+6.6 cm joint error), and on a bad prior it
-rescues 3/4 but leaves s1 at budget. The VP yaw module
-(``server/vp_yaw.py``) and the test-script ``FusedPrior`` stay as
-separate, measured pieces: the VP yaw is a proven third yaw
-measurement (pass 1: unbiased, sigma 1.07 deg, 60-82% available)
-and a proven rescue (pass 3: 3/4 scenarios from FAIL to PASS).
-Cost if it were wired in: +59-64 ms/frame full-res (+36-39 ms
-half-res) on top of the VIO + detector; the pipeline fps figures
-above are not comparable with the round-3 fps (those runs had the
-depth-model voter on; these fusion runs did not).
-
-Recommended next step (UNMEASURED, needs its own test round): a
-slow bias tracker instead of per-frame fusion — average the
-(VP yaw - prior yaw) disagreement over ~30 frames and correct the
-prior yaw only when the persistent bias exceeds ~1.5 deg. That
-would leave a good prior alone (pass 2's failure mode) while
-correcting a systematically biased one (pass 3's success mode).
-A 2 deg prior bias cannot be told from 2 deg prior noise on a
-single frame, so per-frame fusion is the wrong shape for it.
-
-### Honest limits — calibration + third yaw (what this still does NOT prove)
-
-- The yaw gate (sigma <= 1.5 deg, |doorway bias| <= 1.5 deg) is
-  proven only on SYNTHETIC state packets. Whether a real Tello
-  magnetometer passes it is unknown — the §6.9 calibration must be
-  run on a real drone before the real test, and if it fails the
-  real test must not proceed.
-- The VP yaw is measured only on the synthetic room (crisp
-  rendered lines, high-contrast checker floor, posters). A real
-  room with plain walls, no skirting, or a featureless ceiling
-  may give lower availability — the module returns None then, and
-  the pipeline falls back to the prior, by design.
-- The VP yaw needs the magnetometer hint to resolve the 90 deg
-  X/Z ambiguity; without a hint there is no single yaw answer.
-  If the magnetometer itself is off by ~90 deg (e.g. magnetic
-  interference), the hint picks the wrong assignment — the 10 deg
-  gate does not protect against that, because the VP yaw would
-  then be ~90 deg from the prior and the gate would (correctly)
-  reject the VP, leaving the bad prior in place. The gate guards
-  a bad VP, not a bad hint.
-- The fusion passes were run with mono=None (no depth-model
-  voter), so their pipeline fps is not comparable with the
-  round-3 VIO fps (voter on). The VP's own cost is measured
-  separately (pass 1 ms/frame).
-- The s1 pass-3 result (60.2 cm) sits exactly on the budget; a
-  re-run on a different machine load could flip it either way.
-  It is reported as FAIL (60.2 > 60.0), not rounded into a pass.
+- `tests/test_live_fixes.py` (new, standalone, not wired into
+  `run_tests.py`): **9/9 PASS** — Not-joystick blocks moves and logs
+  the force-close guidance; retry after fixing the app works;
+  movement gated on takeoff; land exactly once (5 rapid lands + 1
+  after landing = 1 send); 10 concurrent moves never overlap
+  (max_inflight 1) and coalesce to 1; `live_pose_step` passes stub
+  verdicts through and returns valid=False on a raising VIO; real
+  VIO on identical static frames stays invalid for 10 frames;
+  pipeline with a stub detector + tracking invalid emits no marker
+  for 10 frames; control proves the hazard — the same frozen pose
+  fed as tracking VALID does emit a marker.
+- Full virtual suite re-run on the reconciled code
+  (`full_suite_2026-11-24_reconciled.log`, 724.0 s, exit 0):
+  **27/27 main scenarios PASS, 0 FAIL**; VIO numbers unchanged
+  (s1 40.5, s23 32.6, s20 36.1, s4 36.3 cm); real-only UI server
+  tests PASS; no-drone-video test PASS.
+- Follow-up (not part of these fixes): live VIO runs vision-only —
+  the real Tello state stream (UDP 8890, `server/tello_state.py`
+  StatePrior) is not fed to it. And `connect_tello_to_home_wifi.py`
+  puts the drone in station mode, after which `Tello()` (default
+  host 192.168.10.1) would not find it.
