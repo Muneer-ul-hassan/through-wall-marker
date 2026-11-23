@@ -1,0 +1,50 @@
+{
+  "crouching_person": {
+    "detected": true,
+    "image_hw": [
+      480,
+      640
+    ],
+    "bbox_xyxy_px": [
+      220.1,
+      164.9,
+      385.7,
+      326.9
+    ],
+    "bbox_w_px": 165.6,
+    "bbox_h_px": 162.0,
+    "bbox_h_over_img_h": 0.338,
+    "bbox_aspect_w_over_h": 1.02,
+    "visible_keypoints_ge_0.3": 15,
+    "keypoint_y_span_px": 113.6,
+    "depth_inference_ms": 4603.9,
+    "person_median_model_value": 2.126,
+    "background_median_model_value": 2.308,
+    "person_vs_background_ratio": 0.92,
+    "png": "/home/hatch/workspace/tello-search/wall-marker/tests/web_images/crouching_person_depth.png"
+  },
+  "peeking_over_wall": {
+    "detected": true,
+    "image_hw": [
+      2560,
+      1695
+    ],
+    "bbox_xyxy_px": [
+      69.8,
+      786.9,
+      1652.3,
+      2559.7
+    ],
+    "bbox_w_px": 1582.5,
+    "bbox_h_px": 1772.8,
+    "bbox_h_over_img_h": 0.692,
+    "bbox_aspect_w_over_h": 0.89,
+    "visible_keypoints_ge_0.3": 8,
+    "keypoint_y_span_px": 724.4,
+    "depth_inference_ms": 3999.9,
+    "person_median_model_value": 2.177,
+    "background_median_model_value": 0.45,
+    "person_vs_background_ratio": 4.84,
+    "png": "/home/hatch/workspace/tello-search/wall-marker/tests/web_images/peeking_over_wall_depth.png"
+  }
+}

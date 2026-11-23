@@ -1,0 +1,30 @@
+# Wall Marker — files that must NOT go to GitHub
+# (regenerable, machine-local, or logs)
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Model weights — re-downloaded on first run (see README.md)
+# YOLOv8n-pose (~6.5 MB) downloads on first YOLO run;
+# Depth Anything V2 Small (~95 MB) downloads when --mono-depth is used.
+*.pt
+*.pth
+*.onnx
+
+# Logs
+*.log
+
+# Local virtualenvs
+.venv/
+venv/
+env/
+
+# OS / editor clutter
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

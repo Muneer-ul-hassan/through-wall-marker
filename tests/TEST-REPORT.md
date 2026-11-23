@@ -1,0 +1,1701 @@
+# Wall-Marker Virtual Test Report
+
+Generated: 2026-11-22 22:53:46 (UTC)
+
+## Environment
+
+- Python 3.12.3
+- opencv 5.1.0, numpy 2.5.4, ultralytics 8.4.216
+- Weights: `yolov8n-pose.pt` (in `wall-marker/`), detector conf 0.5, imgsz 640, CPU
+- Total runtime: 90.4 s (1.5 min), one inference process
+- Person billboard: largest person detection from ultralytics' bundled `bus.jpg`, cut out with grabCut (mask eroded 2x), pasted at the TRUE projected position (bottom-centre at the projected foot pixel, height = true projected height). Standalone-detection gate passed (conf 0.90 on a plain background).
+- Drone/room model: SPEC.md (wall z = 3.0 m, doorway x in [-0.6, 0.6] m, phone fixed at (0, 1.5, 0)). Projection `v = cy - fy*y/z` (corrected 2026-11-23).
+
+## Results
+
+| Scenario | Detection rate | Mean joint err | Median joint err | Mean |dist err| | Scale err | False markers | Marker after loss | Methods (tri / bbox-h) | Result |
+|---|---|---|---|---|---|---|---|---|---|
+| s1_basic | 100% (36/36) | 38.6 cm | 34.0 cm | 11.0 cm | 11.9% | 0 | 0 | 31 / 5 | PASS |
+| s2_offcentre | 100% (34/34) | 35.6 cm | 30.0 cm | 0.6 cm | 14.0% | 0 | 0 | 32 / 2 | PASS |
+| s3_close | 100% (38/38) | 37.8 cm | 34.5 cm | 13.5 cm | 11.2% | 0 | 0 | 37 / 1 | PASS |
+| s4_dim | 100% (36/36) | 38.9 cm | 35.6 cm | 10.3 cm | 12.5% | 0 | 0 | 31 / 5 | PASS |
+| s5_tracking_loss | 100% (36/36) | 43.5 cm | 39.4 cm | 16.1 cm | 9.7% | 0 | 0 | 31 / 5 | PASS |
+| s6_no_person | n/a | n/a | n/a | n/a | n/a | 0 | 0 | 0 / 0 | PASS |
+| s7_two_drones | 100% (36/36) | 37.1 cm | 32.8 cm | 9.4 cm | 12.1% | 0 | 0 | 31 / 5 | PASS |
+
+Thresholds (SPEC.md, not moved): detection rate >= 90%, mean joint error <= 60 cm, mean |distance error| <= 60 cm, skeleton scale error <= 25%, false markers = 0 (s6), marker-after-loss = 0 (s5), s7 fused error <= best single-drone error.
+
+### s1_basic — person 4.0 m from phone, centred, light 1.0
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 576; distance-error samples: 34.
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height +31 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -11 cm (negative = marker distance shorter than the true phone->person distance).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- **Result: PASS**
+
+### s2_offcentre — person 5.5 m from phone, off to the side near the doorway
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 34; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 26.
+- Markers emitted: 36 (4 stale); joint-error samples: 544; distance-error samples: 32.
+- Depth methods: {'bbox_height': 2, 'triangulation': 32}; first triangulation frame: 22.
+- Measured depth bias (estimated - true foot depth): bbox-height +33 cm (n=2); triangulation -3 cm (n=32).
+- Mean signed distance error (marker - GT): -1 cm (negative = marker distance shorter than the true phone->person distance).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- **Result: PASS**
+
+### s3_close — person just behind the wall (z = 3.3 m)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 38; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 22.
+- Markers emitted: 36 (0 stale); joint-error samples: 612; distance-error samples: 36.
+- Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
+- Measured depth bias (estimated - true foot depth): bbox-height +20 cm (n=1); triangulation +2 cm (n=37).
+- Mean signed distance error (marker - GT): -14 cm (negative = marker distance shorter than the true phone->person distance).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- **Result: PASS**
+
+### s4_dim — light 0.5, person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 578; distance-error samples: 34.
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height +34 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -10 cm (negative = marker distance shorter than the true phone->person distance).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- **Result: PASS**
+
+### s5_tracking_loss — tracking_valid True until frame 35, False after; person stays visible
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 10 (0 stale); joint-error samples: 168; distance-error samples: 10.
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height +31 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -16 cm (negative = marker distance shorter than the true phone->person distance).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_after_loss`: PASS
+- **Result: PASS**
+
+### s6_no_person — room B empty, same flight path; zero markers, ever
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 0; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 60.
+- Markers emitted: 0 (0 stale); joint-error samples: 0; distance-error samples: 0.
+- Depth methods: {}; first triangulation frame: None.
+- Measured depth bias (estimated - true foot depth): bbox-height n/a; triangulation n/a.
+- Mean signed distance error (marker - GT): n/a (negative = marker distance shorter than the true phone->person distance).
+- check `false_markers`: PASS
+- **Result: PASS**
+
+### s7_two_drones — two drones, different hover points, both see the person
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 35 (0 stale); joint-error samples: 595; distance-error samples: 35.
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height +26 cm (n=5); triangulation -2 cm (n=23).
+- Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
+- Fused mean joint error, hover frames 25-59: 37.1 cm; single-drone mean joint error over the same frames: drone1 39.6 cm, drone2 41.6 cm; best single: 39.6 cm. Single-drone detection (hover frames): {'drone1': {'detected': 35, 'in_view': 35}, 'drone2': {'detected': 27, 'in_view': 27}}.
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `fused_le_best_single`: PASS
+- **Result: PASS**
+
+## No-drone-video test
+
+- Server started on 127.0.0.1:18765 (real `server.main` handler).
+- `/viewer`: 1 `<video>` tag(s); getUserMedia present: True; video-endpoint hints found: none.
+- `/api/markers`: 7 SSE events read in 3 s; all parse as JSON with type marker/none: True; content-type text/event-stream, no video content-type anywhere: True.
+- Unknown routes probed (12): all 404: True ({'/video': 404, '/stream': 404, '/frames': 404, '/api/video': 404, '/api/frames': 404, '/drone': 404, '/api/drone': 404, '/snapshot': 404, '/mjpeg': 404, '/api/markers/1': 404, '/admin': 404, '/api/status/extra': 404}).
+- check `root_redirects_to_viewer`: PASS
+- check `viewer_200_html`: PASS
+- check `exactly_one_video_tag`: PASS
+- check `no_img_tag`: PASS
+- check `no_fetch_or_xhr`: PASS
+- check `no_drone_stream_reference`: PASS
+- check `uses_getusermedia`: PASS
+- check `no_video_content_type`: PASS
+- check `status_json_shape`: PASS
+- check `sse_content_type`: PASS
+- check `sse_no_video_content_type`: PASS
+- check `sse_events_received`: PASS
+- check `sse_all_json`: PASS
+- check `sse_types_json_only`: PASS
+- check `unknown_routes_all_404`: PASS
+- **Result: PASS**
+
+## Honest limits (what this harness does NOT prove)
+
+- Virtual poses are exact: the bridge is fed the true drone pose, so no SLAM drift is simulated. The bridge uncertainty (0.10 + 0.02 s/s, capped at 1.0 m) is a model, not a measurement; the tests check whether real errors stay inside it, but a real VIO/SLAM chain will add drift the harness cannot see. The research report's end-to-end budget (±20-60 cm at 3-6 m with good depth, ±0.5-2 m monocular/Tello) still stands for the real system.
+- The person is a photo cutout, not a 3D body: it is fronto-parallel to the drone by construction, so the planar joint approximation in `depth.joints_3d` is flattered. A real person turned sideways, or with outstretched arms, will have larger joint errors.
+- The planar joint approximation is the largest single joint-error source, and it is measured, not assumed: the drone looks down at the person (camera 1.3 m, chest target 0.85 m), so the person's joints span ~0.3 m of depth along the optical axis (ankles farthest, head nearest), but `joints_3d` places every joint on the foot-depth plane. Upper-body joints are therefore pushed ~0.2-0.3 m too far from the drone; head-joint errors of ~30 cm occur even though their projected pixels are only ~17 px off. A per-joint depth (or a real depth sensor) would remove most of this.
+- The cutout person stands with arms crossed, while the ground-truth skeleton assumes arms hanging at the sides; elbow/wrist joint errors therefore include a real pose mismatch of a few tens of cm (wrists up to ~64 cm on single frames). The person also carries a blue bag that is part of the cutout, and one leg is crossed in front of the other, so the detected ankles sit ~0.2 m above the ground-truth ankle height.
+- The detector's bbox is ~15% shorter than the true billboard height (tight box around the visible body, shoes/hair excluded); the measured depth bias per method is in each scenario section above. Triangulation uses the bbox bottom-centre ray, which sits ~0.15 m above the true foot point.
+- The pipeline's person position is the FOOT point (ground contact), reconstructed from the bbox bottom-centre ray at the estimated depth (server/depth.py: foot_point). An earlier build used the median of the detected joints (~1.07 m above the floor), which biased the displayed distance ~0.5 m short; the foot-point fix (2026-11-23) cut the mean distance error from 44-54 cm to 9-16 cm across the scenarios. The remaining error is dominated by the planar joint approximation and the bbox bottom edge sitting ~0.15 m above the true foot point. The mean signed distance error per scenario is in each scenario section above.
+- One static person, one room pair, no occlusion, no motion blur, no moving person (triangulation assumes a static scene), no network latency, no phone-side rendering check (the viewer projection is verified by code inspection + the GT phone projection in the scenarios, not by a live phone).
+- Detection at 640 px on CPU; dim scenario is a uniform 0.5x brightness factor, not real low-light noise.
+
+## Method used per frame
+
+Per scenario, frames using triangulation vs bbox-height are counted in the table above. In every person scenario the pipeline switches to triangulation as soon as the drone's motion baseline reaches 0.3 m (a few frames after the person first appears) and stays there; bbox-height is used only for the first 1-3 detections. Exact per-frame method sequences:
+
+- s1_basic: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s2_offcentre: f0-19:-, f20-21:bbox_height, f22-28:triangulation, f29-34:-, f35-59:triangulation
+- s3_close: f0-21:-, f22-22:bbox_height, f23-59:triangulation
+- s4_dim: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s5_tracking_loss: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s6_no_person: f0-59:-
+- s7_two_drones: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+
+## VIO fix round 3 — constrained PnP + bbox calibration (2026-11-23)
+
+Round 2 left the VIO joint error over the 60 cm budget in s1_basic
+(71.8 cm) and s23_blank_door (81.7 cm); s20_fast (38.6 cm) and s4_dim
+(55.2 cm) passed. The diagnosed cause was turn yaw error (1.0-1.2 deg
+mean, 4.0-4.5 deg max) corrupting the depth triangulation. Round 3
+was ordered repeat-until-perfect: search for a better method first,
+then test → fix → implement → re-test until all 4 VIO scenarios pass.
+This section records what was tried, what won, and what was rejected
+— with numbers, so nothing is re-tried blindly. The per-scenario
+round 2 vs round 3 table is in the extended section below
+("### VIO fix round 3 — constrained PnP"); the numbers there are the
+regenerated full-suite run (2026-11-23, 678.8 s).
+
+### Winner: 1-DoF yaw PnP (default `pnp_mode="yaw1dof"`)
+
+`server/vio.py` gained four PnP modes (`pnp_mode`: "full" = the
+round-2 6-DoF PnP; "yaw1dof" = pitch/roll fixed from the Tello
+attitude prior, yaw + centre solved jointly; "attitude" =
+translation-only PnP with the full attitude from the prior;
+"prior" = the 6-DoF PnP with the prior as a soft factor,
+sigmas (2, 1, 1) deg). Each mode falls back down the chain
+(attitude → yaw1dof → full, etc.) when its candidate fails the
+`_accept_pnp` gate, so frames stay valid. Measured on the 4 VIO
+scenarios (harness prior = quantised GT attitudes, accurate to
+~1 deg):
+
+| Mode | s1 | s23 | s20 | s4 | Verdict |
+|---|---|---|---|---|---|
+| full (round 2) | 71.8 FAIL | 81.7 FAIL | 38.6 PASS | 55.2 PASS | baseline |
+| yaw1dof | 47.9 PASS | 45.9 PASS | 42.2 PASS | 59.4 PASS | best before the bbox fix — but s4 by only 0.6 cm |
+| prior σ=2 | 57.3 PASS | 81.3 FAIL | 38.9 PASS | 69.5 FAIL | soft prior helps s1, hurts s4/s23 |
+| prior σ=1 / σ=3 | 63.5 / 56.5 | 81.1 / 77.9 | 40.3 / 38.2 | 69.8 / 69.6 | no sigma passes all 4 |
+| attitude (exact prior) | 37.9 PASS | 76.3 FAIL | 46.6 PASS | 56.7 PASS | best s1 ever, but s23 fails even with an exact prior |
+| attitude (yaw ±2 deg) | 51.7 / 59.8 | 77.5 / 58.6 | 42.1 / 42.9 | 43.5 / 43.2 | non-monotonic, scenario-dependent |
+| attitude (y+2/p−1/r+1) | 80.0 FAIL | 93.9 FAIL | 76.4 FAIL | 79.8 FAIL | fragile to realistic ±1 deg pitch/roll prior error |
+
+The yaw-vs-joint correlation is NEGATIVE (r = −0.48 for "full"):
+marker frames with yaw error < 0.5 deg had joint error 78.6 cm,
+frames with yaw > 2 deg had 49.6 cm — so the round-2 diagnosis
+(yaw error corrupts triangulation) was incomplete; depth quality
+matters as much as yaw. s20 passes despite the largest marker-frame
+yaw (4.2 deg) because fast motion gives a large triangulation
+baseline. **"yaw1dof" is the default** (`MonocularVO(pnp_mode=...)`,
+default changed from "full" to "yaw1dof" in round 3).
+
+### The s4 fix was not the yaw at all: the bbox-height bias
+
+With yaw1dof, s4 sat at 59.4 cm — 0.6 cm from the budget. Its
+marker frames use bbox-height exclusively (all 10), and the
+distance error there is a SYSTEMATIC bias, not noise: mean −26.5 cm,
+std 1.7 cm (estimated depth 2.86 m vs true 2.53 m, every frame the
+same way). The triangulation in s4 is corrupted and correctly
+rejected by the 25% cross-check (baseline only 0.36 m — the person
+is first detected at f48, so the history is short — and a 2.2 deg
+marker-frame yaw error displaces the triangulated point ~0.7 m
+shallow by the stereo error law depth²·Δθ/baseline; measured tri
+depths 1.68-1.93 m vs true 2.36-2.58 m). The bbox bias is a wrong
+height: the YOLOv8n-pose bbox spans ~0.89 of the person's height,
+not 1.00. Measured on the harness renderer (person 1.7 m, s1/s23/
+s20/s4, all in-view detected frames): implied H = true_depth ·
+bbox_h_px / fx is 1.487-1.533 m (mean 1.51 m, within-scenario std
+0.006-0.013 m). The bbox itself is precise (std < 1%); the error
+is a stable bias. Fix: `server/depth.py` `BBOX_HEIGHT_FRACTION =
+0.89` — the bbox vote now uses H = person_h_m × 0.89. The
+keypoint-anchored alternatives were measured and REJECTED: the
+ankle keypoint is noisier than the bbox bottom (implied-H std
+0.017-0.022 vs 0.006-0.013), so the anchored and nose-to-ankle
+heights give larger depth errors (0.35-0.53 m) than the plain bbox
+with the corrected H. After the calibration, all 4 VIO scenarios
+pass with margin (full-suite run): s1 40.5 cm, s23 32.6 cm, s20
+36.1 cm, s4 36.3 cm — worst margin 19.5 cm. The calibration also
+improved the GT-pose runs (s1 38.6 → 36.1, s4 38.9 → 35.6, s5
+43.5 → 35.7, s7 37.1 → 34.1 cm), so the regression baseline
+(`tests/run_tests.py` `RECORDED_2026_11_23`) was re-based to the
+post-calibration numbers — the pre-calibration numbers are
+preserved in the original section above and in this narrative.
+The scale error rose slightly on the same runs (s1 11.9 → 13.1%,
+s5 9.7 → 13.5%) — a side effect of the corrected depth on the
+cross-check; still PASS, and the joint error improved everywhere.
+The full 27-scenario GT-pose suite is 27/27 PASS (0 FAIL in the
+whole report), and the VIO+mono runs reproduce the VIO-only
+numbers exactly (voter changed 0 frames).
+
+### Tried and rejected: NEC / ROBA rotation + rotation averaging
+
+Per the parallel research report
+(`~/workspace/research_notes/vio-yaw-error-better-methods-20261123/report.md`),
+the NEC (Kneip & Lynen — rotation from bearings only, translation
+dropped out) plus ROBA/Shonan rotation averaging was the top pick:
+it breaks the coupling (yaw estimated from the same map that the
+yaw error corrupts, chained frame-to-frame). Built in
+`server/nec.py` (GTSAM 4.3.0 ShonanAveraging3 + a SciPy fallback)
+and measured offline on the scenario frames. It does NOT beat
+yaw1dof on this data, and was stopped with numbers:
+
+- NEC per-pair (warm-started from the prior, LK tracks):
+  0.73-0.87 deg mean, 2.6-3.8 deg max (s1/s23) — comparable to the
+  PnP, not better. Cold-start NEC: 1.21 deg mean, 7.45 deg max.
+  With GT correspondences (perfect tracks): 1.21 deg mean — so it
+  is NOT track error and NOT planarity; the NEC is ill-conditioned
+  at the 2.7 cm baseline (parallax ~0.4 deg).
+- The per-pair error has a SYSTEMATIC bias: signed mean −0.37 deg
+  (s1), −0.26 deg (s23); −0.75 deg/frame during the turn. The
+  λ_min formulation (Kneip's original objective, R only) shows the
+  same bias (−0.30/−0.26 deg), so it is in the NEC objective / the
+  near-planar two-plane scene, not the solver. Chaining the bias
+  gives 27.8 deg mean absolute yaw error over 60 frames.
+- Long-range pairs are WORSE, not better: lag 5 → 1.16/1.67 deg,
+  lag 10 → 1.55/3.51 deg (s1/s23). Averaging cannot fix a
+  systematic bias, and the pairs are all warm-started from the
+  same prior, so their errors are correlated.
+- Two real bugs were found and fixed while building it: the
+  Shonan gauge is RIGHT multiplication (the measurements
+  R_i @ R_j.T are invariant under R_k → R_k @ Q), and the GTSAM
+  4.3.0 `ShonanAveraging3.run()` signature is `run(min_p, max_p)`
+  returning `(Values, cost)`. `server/nec.py` is kept as reference
+  (documented as rejected) so the NEC is not re-tried blindly.
+- Next ranked candidates NOT built (the loop stopped because
+  yaw1dof + the bbox calibration already passes all 4 with
+  margin): vanishing-point / Manhattan compass (a full new
+  subsystem; the NEC result suggests vision-only rotation is
+  weakly constrained on this data), and the magnetometer-as-rotation
+  gate (the "attitude" mode above is its harness equivalent — it
+  fails s23 even with an exact prior, and the §6.9 real-Tello yaw
+  calibration is still unrun, so no real magnetometer accuracy is
+  claimed).
+
+### Tried and rejected: the cheap add-ons
+
+- **Yaw-trajectory smoothing** (rate-limited): the yaw1dof signed
+  yaw error has lag-1 autocorrelation 0.87-0.94 (s1/s23/s4) — it
+  is a slowly-varying bias, not frame noise (f1-19: ±0.2-0.5 deg;
+  f20-39 turn: a steady +0.65/−1.01/−0.59 deg; f40+: a persistent
+  1-2 deg offset). A causal smoother tracks a smooth bias; it
+  cannot remove it. Not built.
+- **Insurance #5 (weight bbox-height more when yaw uncertainty is
+  high)**: measured backwards — on marker frames, triangulation
+  is MORE accurate than bbox-height in all 3 scenarios where it
+  fires (s1: tri 44.1 vs bbox 57.3 cm; s23: 28.1 vs 67.3 cm; s20:
+  39.0 vs 44.5 cm). Preferring bbox would hurt. Not built. The
+  25% cross-check already rejects gross triangulation failures.
+- **Mono depth voter on the VIO path**: still never flips
+  (voter_changed = 0 on all 4 VIO scenarios, and on all 12 GT
+  mono scenarios). Its value remains unproven in-suite.
+
+### Sensitivity — the honest caveat on the winner
+
+yaw1dof is FRAGILE to prior error. With a (yaw+2, pitch−1, roll+1)
+deg offset applied to the synthetic state packets (simulating a
+real Tello attitude off by that much — the video and GT are
+untouched), yaw1dof fails s1 (90.4 cm), s20 (81.6 cm) and s4
+(89.5 cm); only s23 passes (58.1 cm). Drift jumps to 21-22 cm
+(vs 3.8-8.3 cm unperturbed). The "full" mode is robust to the same
+offset (71.8/64.0/61.5/64.7 cm — barely worse than unperturbed,
+because it solves all 6 DoF from vision) but fails the 60 cm
+budget even unperturbed. So the harness pass holds only while the
+attitude prior is accurate to ~1 deg — which the quantised-GT
+harness prior is. On a real Tello the magnetometer yaw accuracy
+is the binding constraint, and the §6.9 yaw calibration
+(`tools/calibrate_tello.py`) must show σ ≲ 1.5 deg with no doorway
+bias before the real test. This is the single most important
+unmeasured number for the real system.
+
+### Latent bug fixed: dead-reckoning NameError
+
+`server/vio.py` `_dead_reckon` referenced `DEAD_RECKON_MAX_S` /
+`DEAD_RECKON_MAX_M`, which were defined in `server/tello_state.py`
+(2.0 s, 1.0 m) but never imported into `vio.py` — a NameError
+that fires only when vision fails badly enough to reach dead
+reckoning (hit during the attitude-mode sensitivity run on
+s20_fast). Fixed by importing both names; the dead-reckoning path
+was effectively untested/broken in round 2.
+
+### FPS profile — machine limit, not code
+
+Measured 2026-11-23 (`/tmp/vio_profile.py`, s1_basic, 60 frames,
+shared 1.5-CPU VM): detector alone 96.5 ms/frame (10.4 fps
+ceiling with the detector alone); VIO alone (yaw1dof) 81.0 ms;
+`process_frame` with GT poses 101.8 ms; full pipeline with VIO
+159.5 ms/frame (6.3 fps). The VIO and the detector run
+sequentially, so their costs add; the pipeline's own overhead
+(depth + bridge + fusion) is ~5 ms/frame. The 10 fps target is
+not reachable on THIS VM with CPU-only YOLO + VIO — the detector
+alone is 96.5 ms. A torch thread-count probe (evidence only,
+shipped threading unchanged) found 2 threads faster than 4
+(81.8 vs 96.5 ms/frame; a later 4-thread run measured 216.5 ms,
+so the numbers are noisy on a shared VM). No code fix is claimed
+for a machine limit, and the marker path was not slowed to buy
+fps. On a real laptop the detector and VIO should each be
+30-50 ms and the pipeline should fit under 100 ms — unmeasured.
+
+### Ground test (smooth flight, new default)
+
+`tests/vio_ground_test.py` with the yaw1dof default: 102/105
+frames valid (97%), drift mean 29.1 cm, max 61.9 cm, final
+39.9 cm; approach 7.0 cm, pass 14.7 cm, turn 27.8 cm, hover
+47.7 cm; VIO step 58-64 ms/frame. Round 2 lost tracking mid-turn
+(55/105 valid, drift 9.2 cm over the valid frames only) — round 3
+tracks the whole flight, but the hover drift (47.7 cm mean) is
+the remaining weakness: the turn's yaw bias persists as a
+position drift while hovering. The ground-test drift is not the
+60 cm marker budget, but the hover phase is where the real test
+will live or die.
+
+## Extended tests — 2026-11-23 13:31:08 (UTC)
+
+New rooms/places, multi-drone (4 and 5 drones), and adversarial scenarios on top of the original 7. Thresholds unchanged from SPEC.md (detection >= 90%, mean joint error <= 60 cm, mean |distance error| <= 60 cm, skeleton scale error <= 25%, false markers = 0, marker-after-loss = 0, fused error <= best single-drone error).
+
+Scenarios run: s1_basic, s2_offcentre, s3_close, s4_dim, s5_tracking_loss, s6_no_person, s7_two_drones, s8_wall_close, s9_wall_far, s10_phone_offcentre, s11_large_room_far, s12_bright, s24_empty_new_room, s13_dim_noise, s14_glare, s15_occluded, s16_sideways, s17_edge, s18_moving, s19_two_people, s20_fast, s21_loss_recovery, s22_clutter, s23_blank_door, s25_four_drones, s26_five_drones, s27_four_drones_partial
+
+## Environment (extended run)
+
+- Python 3.12.3
+- opencv 5.1.0, numpy 2.5.4, ultralytics 8.4.216
+- Weights: `yolov8n-pose.pt` (in `wall-marker/`), detector conf 0.5, imgsz 640, CPU
+- Total runtime: 1434.0 s (23.9 min), one inference process
+- Person billboard: largest person detection from ultralytics' bundled `bus.jpg`, cut out with grabCut (mask eroded 2x), pasted at the TRUE projected position. Two-person scenarios paste the same cutout twice at different positions (identical twins — documented).
+- Room model: SPEC.md default (wall z = 3.0 m, doorway x in [-0.6, 0.6] m, phone fixed at (0, 1.5, 0)) unless a scenario overrides it (see its description). Projection `v = cy - fy*y/z`.
+
+## Extended results
+
+| Scenario | Detection rate | Mean joint err | Worst joint err | Mean |dist err| | Worst dist err | Scale err | False markers | Bridge-invalid markers | Result |
+|---|---|---|---|---|---|---|---|---|---|
+| s1_basic | 100% (36/36) | 36.1 cm | 64.2 cm | 8.7 cm | 9.9 cm | 13.1% | 0 | 0 | PASS |
+| s2_offcentre | 100% (34/34) | 35.5 cm | 63.6 cm | 0.9 cm | 2.4 cm | 14.1% | 0 | 0 | PASS |
+| s3_close | 100% (38/38) | 37.6 cm | 62.2 cm | 13.4 cm | 15.2 cm | 11.3% | 0 | 0 | PASS |
+| s4_dim | 100% (36/36) | 35.6 cm | 61.4 cm | 8.0 cm | 10.9 cm | 13.7% | 0 | 0 | PASS |
+| s5_tracking_loss | 100% (36/36) | 35.7 cm | 60.5 cm | 9.1 cm | 9.9 cm | 13.5% | 0 | 0 | PASS |
+| s6_no_person | n/a | n/a | n/a | n/a | n/a | n/a | 0 | 0 | PASS |
+| s7_two_drones | 100% (36/36) | 34.1 cm | 65.2 cm | 6.6 cm | 7.4 cm | 13.7% | 0 | 0 | PASS |
+| s8_wall_close | 100% (38/38) | 33.9 cm | 70.2 cm | 12.1 cm | 12.3 cm | 14.4% | 0 | 0 | PASS |
+| s9_wall_far | 100% (37/37) | 37.8 cm | 60.9 cm | 10.4 cm | 15.0 cm | 10.8% | 0 | 0 | PASS |
+| s10_phone_offcentre | 100% (30/30) | 36.6 cm | 67.5 cm | 10.0 cm | 10.2 cm | 12.1% | 0 | 0 | PASS |
+| s11_large_room_far | 100% (39/39) | 31.9 cm | 71.4 cm | 6.7 cm | 6.9 cm | 15.0% | 0 | 0 | PASS |
+| s12_bright | 100% (36/36) | 36.2 cm | 61.1 cm | 8.5 cm | 8.9 cm | 13.4% | 0 | 0 | PASS |
+| s24_empty_new_room | n/a | n/a | n/a | n/a | n/a | n/a | 0 | 0 | PASS |
+| s13_dim_noise | 100% (36/36) | 36.8 cm | 64.3 cm | 8.9 cm | 9.8 cm | 17.2% | 0 | 0 | PASS |
+| s14_glare | 100% (36/36) | 36.4 cm | 64.1 cm | 8.4 cm | 9.0 cm | 13.5% | 0 | 0 | PASS |
+| s15_occluded | 100% (37/37) | 42.1 cm | 79.5 cm | 16.3 cm | 25.8 cm | 10.1% | 0 | 0 | PASS |
+| s16_sideways | 100% (36/36) | 33.3 cm | 68.6 cm | 8.2 cm | 12.1 cm | 18.2% | 0 | 0 | PASS |
+| s17_edge | 100% (42/42) | 32.6 cm | 74.8 cm | 4.5 cm | 7.3 cm | 12.4% | 0 | 0 | PASS |
+| s18_moving | 100% (37/37) | 48.1 cm | 122.9 cm | 12.6 cm | 22.6 cm | 17.5% | 0 | 0 | PASS |
+| s19_two_people | 100% (37/37) | 36.1 cm | 73.0 cm | 8.6 cm | 15.9 cm | 12.9% | 0 | 0 | PASS |
+| s20_fast | 100% (33/33) | 35.2 cm | 65.7 cm | 7.4 cm | 7.6 cm | 13.6% | 0 | 0 | PASS |
+| s21_loss_recovery | 100% (36/36) | 38.2 cm | 64.8 cm | 8.3 cm | 9.0 cm | 13.4% | 0 | 0 | PASS |
+| s22_clutter | 100% (36/36) | 36.4 cm | 64.1 cm | 8.4 cm | 9.0 cm | 13.5% | 0 | 0 | PASS |
+| s23_blank_door | 100% (38/38) | 36.0 cm | 66.3 cm | 11.8 cm | 12.2 cm | 13.7% | 0 | 0 | PASS |
+| s25_four_drones | 100% (38/38) | 32.7 cm | 69.5 cm | 7.5 cm | 9.0 cm | 14.5% | 0 | 0 | PASS |
+| s26_five_drones | 100% (38/38) | 30.9 cm | 63.9 cm | 6.1 cm | 6.6 cm | 14.5% | 0 | 0 | PASS |
+| s27_four_drones_partial | 100% (36/36) | 34.1 cm | 65.2 cm | 6.6 cm | 7.4 cm | 13.7% | 0 | 0 | PASS |
+
+Thresholds (SPEC.md, not moved): detection rate >= 90%, mean joint error <= 60 cm, mean |distance error| <= 60 cm, skeleton scale error <= 25%, false markers = 0 (empty rooms), marker-after-loss = 0 (s5), marker-during-loss = 0 (s21), no merged markers (s19), marker-while-bridge-invalid = 0 (all scenarios), fused error <= best single-drone error (multi-drone). Worst-frame errors are reported, not thresholded — they are the adversarial signal, not the pass criterion.
+
+### Regression: original 7 vs the recorded 2026-11-23 run
+
+The original 7 scenarios were re-run in this extended run. Rendering and inference are deterministic, so the numbers must reproduce the recorded run (tolerance 0.5 cm on means, identical detection counts and PASS/FAIL). Any drift means the refactor changed the original rendering — that would be a bug, not noise.
+
+| Scenario | Detection (recorded / re-run) | Mean joint (recorded / re-run) | Mean |dist| (recorded / re-run) | Scale (recorded / re-run) | Match |
+|---|---|---|---|---|---|
+| s1_basic | 100% / 100% | 36.1 cm / 36.1 cm | 8.7 cm / 8.7 cm | 13.1% / 13.1% | MATCH |
+| s2_offcentre | 100% / 100% | 35.5 cm / 35.5 cm | 0.9 cm / 0.9 cm | 14.1% / 14.1% | MATCH |
+| s3_close | 100% / 100% | 37.6 cm / 37.6 cm | 13.4 cm / 13.4 cm | 11.3% / 11.3% | MATCH |
+| s4_dim | 100% / 100% | 35.6 cm / 35.6 cm | 8.0 cm / 8.0 cm | 13.7% / 13.7% | MATCH |
+| s5_tracking_loss | 100% / 100% | 35.7 cm / 35.7 cm | 9.1 cm / 9.1 cm | 13.5% / 13.5% | MATCH |
+| s6_no_person | n/a / n/a | n/a / n/a | n/a / n/a | n/a / n/a | MATCH |
+| s7_two_drones | 100% / 100% | 34.1 cm / 34.1 cm | 6.6 cm / 6.6 cm | 13.7% / 13.7% | MATCH |
+
+### s1_basic — person 4.0 m from phone, centred, light 1.0
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 576; distance-error samples: 34.
+- Worst single-frame joint error: 64.2 cm; worst single-frame distance error: 9.9 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -0 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 191.5 ms/frame mean (5.2 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s2_offcentre — person 5.5 m from phone, off to the side near the doorway
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 34; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 26.
+- Markers emitted: 36 (4 stale); joint-error samples: 544; distance-error samples: 32.
+- Worst single-frame joint error: 63.6 cm; worst single-frame distance error: 2.4 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 2, 'triangulation': 32}; first triangulation frame: 22.
+- Measured depth bias (estimated - true foot depth): bbox-height +1 cm (n=2); triangulation -3 cm (n=32).
+- Mean signed distance error (marker - GT): -1 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 200.0 ms/frame mean (5.0 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s3_close — person just behind the wall (z = 3.3 m)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 38; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 22.
+- Markers emitted: 36 (0 stale); joint-error samples: 612; distance-error samples: 36.
+- Worst single-frame joint error: 62.2 cm; worst single-frame distance error: 15.2 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
+- Measured depth bias (estimated - true foot depth): bbox-height -7 cm (n=1); triangulation +2 cm (n=37).
+- Mean signed distance error (marker - GT): -13 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 196.8 ms/frame mean (5.1 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s4_dim — light 0.5, person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 578; distance-error samples: 34.
+- Worst single-frame joint error: 61.4 cm; worst single-frame distance error: 10.9 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height +2 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 218.2 ms/frame mean (4.6 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s5_tracking_loss — tracking_valid True until frame 35, False after; person stays visible
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 10 (0 stale); joint-error samples: 168; distance-error samples: 10.
+- Worst single-frame joint error: 60.5 cm; worst single-frame distance error: 9.9 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -0 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 172.9 ms/frame mean (5.8 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_after_loss`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s6_no_person — room B empty, same flight path; zero markers, ever
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 0; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 60.
+- Markers emitted: 0 (0 stale); joint-error samples: 0; distance-error samples: 0.
+- Worst single-frame joint error: n/a; worst single-frame distance error: n/a (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- False markers (empty room): 0.
+- Depth methods: {}; first triangulation frame: None.
+- Measured depth bias (estimated - true foot depth): bbox-height n/a; triangulation n/a.
+- Mean signed distance error (marker - GT): n/a (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 189.6 ms/frame mean (5.3 fps).
+- check `false_markers`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s7_two_drones — two drones, different hover points, both see the person
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 35 (0 stale); joint-error samples: 595; distance-error samples: 35.
+- Worst single-frame joint error: 65.2 cm; worst single-frame distance error: 7.4 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -4 cm (n=5); triangulation -2 cm (n=23).
+- Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 424.0 ms/frame mean (2.4 fps).
+- Fused mean joint error, hover frames 25-59: 34.1 cm; single-drone mean joint error over the same frames: drone1 36.4 cm, drone2 37.6 cm; best single: 36.4 cm. Single-drone detection (hover frames): {'drone1': {'detected': 35, 'in_view': 35}, 'drone2': {'detected': 27, 'in_view': 27}}.
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- check `fused_le_best_single`: PASS
+- **Result: PASS**
+
+### s8_wall_close — wall z = 2.0 m, doorway off-centre (left), person 2.5 m (z) from phone
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 38; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 22.
+- Markers emitted: 36 (0 stale); joint-error samples: 612; distance-error samples: 36.
+- Worst single-frame joint error: 70.2 cm; worst single-frame distance error: 12.3 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
+- Measured depth bias (estimated - true foot depth): bbox-height -4 cm (n=1); triangulation -0 cm (n=37).
+- Mean signed distance error (marker - GT): -12 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 193.5 ms/frame mean (5.2 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s9_wall_far — wall z = 4.0 m, doorway off-centre (right), person 5.5 m (z) from phone
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 37; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 23.
+- Markers emitted: 35 (0 stale); joint-error samples: 595; distance-error samples: 35.
+- Worst single-frame joint error: 60.9 cm; worst single-frame distance error: 15.0 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 36}; first triangulation frame: 24.
+- Measured depth bias (estimated - true foot depth): bbox-height -3 cm (n=1); triangulation +1 cm (n=36).
+- Mean signed distance error (marker - GT): -10 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 227.9 ms/frame mean (4.4 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s10_phone_offcentre — phone NOT at the origin (1.2, 1.5, 0.5); person 4.5 m (z) away, other side
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 30; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 30.
+- Markers emitted: 32 (4 stale); joint-error samples: 476; distance-error samples: 28.
+- Worst single-frame joint error: 67.5 cm; worst single-frame distance error: 10.2 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 25}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -2 cm (n=5); triangulation -3 cm (n=25).
+- Mean signed distance error (marker - GT): -10 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 201.9 ms/frame mean (5.0 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s11_large_room_far — larger room B (x +-4 m, z to 12 m), person 7.0 m (z) from phone
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 39; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 21.
+- Markers emitted: 37 (0 stale); joint-error samples: 592; distance-error samples: 37.
+- Worst single-frame joint error: 71.4 cm; worst single-frame distance error: 6.9 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 38}; first triangulation frame: 20.
+- Measured depth bias (estimated - true foot depth): bbox-height +21 cm (n=1); triangulation +1 cm (n=38).
+- Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 180.7 ms/frame mean (5.5 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s12_bright — brightness 1.2x, person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 578; distance-error samples: 34.
+- Worst single-frame joint error: 61.1 cm; worst single-frame distance error: 8.9 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -2 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 198.6 ms/frame mean (5.0 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s24_empty_new_room — empty room B in a NEW geometry (wall 2.5 m, doorway off-centre right); zero markers, ever
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 0; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 60.
+- Markers emitted: 0 (0 stale); joint-error samples: 0; distance-error samples: 0.
+- Worst single-frame joint error: n/a; worst single-frame distance error: n/a (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- False markers (empty room): 0.
+- Depth methods: {}; first triangulation frame: None.
+- Measured depth bias (estimated - true foot depth): bbox-height n/a; triangulation n/a.
+- Mean signed distance error (marker - GT): n/a (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 213.4 ms/frame mean (4.7 fps).
+- check `false_markers`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s13_dim_noise — light 0.4x with REAL Gaussian noise (sigma 12), person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 556; distance-error samples: 34.
+- Worst single-frame joint error: 64.3 cm; worst single-frame distance error: 9.8 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height +0 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 184.3 ms/frame mean (5.4 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s14_glare — bright window directly behind the person + bloom (backlit), person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 578; distance-error samples: 34.
+- Worst single-frame joint error: 64.1 cm; worst single-frame distance error: 9.0 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 184.2 ms/frame mean (5.4 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s15_occluded — person partly hidden behind a wardrobe (~40% of the body covered), person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 37; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 23.
+- Markers emitted: 35 (0 stale); joint-error samples: 548; distance-error samples: 35.
+- Worst single-frame joint error: 79.5 cm; worst single-frame distance error: 25.8 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 21, 'triangulation': 16}; first triangulation frame: 44.
+- Measured depth bias (estimated - true foot depth): bbox-height +7 cm (n=21); triangulation +27 cm (n=16).
+- Mean signed distance error (marker - GT): -16 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 187.9 ms/frame mean (5.3 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s16_sideways — person turned sideways (facing +X, 90 deg to the viewing direction), narrowed billboard, person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 544; distance-error samples: 34.
+- Worst single-frame joint error: 68.6 cm; worst single-frame distance error: 12.1 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height +4 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 199.3 ms/frame mean (5.0 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s17_edge — person at the very edge of the drone frame (billboard right edge ~30 px from the frame edge); drone looks at a fixed point, not at the person
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 42; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 18.
+- Markers emitted: 40 (0 stale); joint-error samples: 680; distance-error samples: 40.
+- Worst single-frame joint error: 74.8 cm; worst single-frame distance error: 7.3 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 13, 'triangulation': 29}; first triangulation frame: 20.
+- Measured depth bias (estimated - true foot depth): bbox-height +11 cm (n=13); triangulation +5 cm (n=29).
+- Mean signed distance error (marker - GT): +5 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 200.9 ms/frame mean (5.0 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s18_moving — person walking slowly (0.25 m/s across, 0.12 m/s toward the wall) — triangulation assumes a static scene
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 37; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 23.
+- Markers emitted: 35 (0 stale); joint-error samples: 595; distance-error samples: 35.
+- Worst single-frame joint error: 122.9 cm; worst single-frame distance error: 22.6 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 23, 'triangulation': 14}; first triangulation frame: 24.
+- Measured depth bias (estimated - true foot depth): bbox-height +2 cm (n=23); triangulation -5 cm (n=14).
+- Mean signed distance error (marker - GT): +13 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 180.7 ms/frame mean (5.5 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s19_two_people — TWO people in room B (~1.9 m apart); the system must mark a real person, never a merged midpoint marker
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 37; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 23.
+- Markers emitted: 34 (1 stale); joint-error samples: 578; distance-error samples: 34.
+- Worst single-frame joint error: 73.0 cm; worst single-frame distance error: 15.9 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Merged markers (marker > 1.0 m from BOTH people): 0 (must be 0).
+- Depth methods: {'bbox_height': 3, 'triangulation': 34}; first triangulation frame: 25.
+- Measured depth bias (estimated - true foot depth): bbox-height -32 cm (n=3); triangulation -25 cm (n=34).
+- Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 184.1 ms/frame mean (5.4 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `no_merged_markers`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s20_fast — fast drone: fast approach + fast wide hover (amp 0.9 m, period 1.2 s)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 33; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 27.
+- Markers emitted: 35 (4 stale); joint-error samples: 527; distance-error samples: 31.
+- Worst single-frame joint error: 65.7 cm; worst single-frame distance error: 7.6 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 32}; first triangulation frame: 24.
+- Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=1); triangulation -4 cm (n=32).
+- Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 196.1 ms/frame mean (5.1 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s21_loss_recovery — tracking loss frames 25-40, recovery from frame 41; marker must vanish on loss and only return after the bridge is re-established
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 18 (0 stale); joint-error samples: 300; distance-error samples: 18.
+- Worst single-frame joint error: 64.8 cm; worst single-frame distance error: 9.0 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Markers during the loss window: 0 (must be 0); first marker after recovery: frame 42.
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 218.3 ms/frame mean (4.6 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_during_loss`: PASS
+- check `marker_resumes_after_recovery`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s22_clutter — cluttered room B (furniture boxes + extra posters), person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 578; distance-error samples: 34.
+- Worst single-frame joint error: 64.1 cm; worst single-frame distance error: 9.0 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 214.6 ms/frame mean (4.7 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s23_blank_door — featureless blank wall at the doorway (no posters on the shared wall), wall 2.5 m, person 3.6 m (z)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 38; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 22.
+- Markers emitted: 36 (0 stale); joint-error samples: 612; distance-error samples: 36.
+- Worst single-frame joint error: 66.3 cm; worst single-frame distance error: 12.2 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
+- Measured depth bias (estimated - true foot depth): bbox-height -6 cm (n=1); triangulation +0 cm (n=37).
+- Mean signed distance error (marker - GT): -12 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 210.2 ms/frame mean (4.8 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s25_four_drones — 4 drones, different hover points, all see the person
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 38; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 22.
+- Markers emitted: 37 (0 stale); joint-error samples: 629; distance-error samples: 37.
+- Worst single-frame joint error: 69.5 cm; worst single-frame distance error: 9.0 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
+- Measured depth bias (estimated - true foot depth): bbox-height -13 cm (n=1); triangulation -0 cm (n=37).
+- Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
+- Fused mean joint error, hover frames 25-59: 32.8 cm; single-drone mean joint error over the same frames: drone1 36.4 cm, drone2 37.6 cm, drone3 34.4 cm, drone4 33.1 cm; best single: 33.1 cm. Single-drone detection (hover frames): {'drone1': {'detected': 35, 'in_view': 35}, 'drone2': {'detected': 27, 'in_view': 27}, 'drone3': {'detected': 35, 'in_view': 35}, 'drone4': {'detected': 35, 'in_view': 35}}.
+- Per-drone detection in the fused run (all frames / hover frames): {'drone1': {'in_view': 36, 'detected': 36, 'in_view_hover': 35, 'detected_hover': 35}, 'drone2': {'in_view': 28, 'detected': 28, 'in_view_hover': 27, 'detected_hover': 27}, 'drone3': {'in_view': 37, 'detected': 37, 'in_view_hover': 35, 'detected_hover': 35}, 'drone4': {'in_view': 38, 'detected': 38, 'in_view_hover': 35, 'detected_hover': 35}}.
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- check `fused_le_best_single`: PASS
+- **Result: PASS**
+
+### s26_five_drones — 5 drones, different hover points, all see the person
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 38; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 22.
+- Markers emitted: 37 (0 stale); joint-error samples: 629; distance-error samples: 37.
+- Worst single-frame joint error: 63.9 cm; worst single-frame distance error: 6.6 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
+- Measured depth bias (estimated - true foot depth): bbox-height -2 cm (n=1); triangulation -1 cm (n=37).
+- Mean signed distance error (marker - GT): -6 cm (negative = marker distance shorter than the true phone->person distance).
+- Fused mean joint error, hover frames 25-59: 31.0 cm; single-drone mean joint error over the same frames: drone1 36.4 cm, drone2 37.6 cm, drone3 34.4 cm, drone4 33.1 cm, drone5 34.5 cm; best single: 33.1 cm. Single-drone detection (hover frames): {'drone1': {'detected': 35, 'in_view': 35}, 'drone2': {'detected': 27, 'in_view': 27}, 'drone3': {'detected': 35, 'in_view': 35}, 'drone4': {'detected': 35, 'in_view': 35}, 'drone5': {'detected': 35, 'in_view': 35}}.
+- Per-drone detection in the fused run (all frames / hover frames): {'drone1': {'in_view': 36, 'detected': 36, 'in_view_hover': 35, 'detected_hover': 35}, 'drone2': {'in_view': 28, 'detected': 28, 'in_view_hover': 27, 'detected_hover': 27}, 'drone3': {'in_view': 37, 'detected': 37, 'in_view_hover': 35, 'detected_hover': 35}, 'drone4': {'in_view': 38, 'detected': 38, 'in_view_hover': 35, 'detected_hover': 35}, 'drone5': {'in_view': 38, 'detected': 38, 'in_view_hover': 35, 'detected_hover': 35}}.
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- check `fused_le_best_single`: PASS
+- **Result: PASS**
+
+### s27_four_drones_partial — 4 drones, 2 lose sight of the person (they look at the back corners) — fusion must still work from the remaining 2
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 35 (0 stale); joint-error samples: 595; distance-error samples: 35.
+- Worst single-frame joint error: 65.2 cm; worst single-frame distance error: 7.4 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height n/a; triangulation n/a.
+- Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
+- Fused mean joint error, hover frames 25-59: 34.1 cm; single-drone mean joint error over the same frames: drone1 36.4 cm, drone2 37.6 cm, drone3 n/a, drone4 n/a; best single: 36.4 cm. Single-drone detection (hover frames): {'drone1': {'detected': 35, 'in_view': 35}, 'drone2': {'detected': 27, 'in_view': 27}, 'drone3': {'detected': 0, 'in_view': 0}, 'drone4': {'detected': 0, 'in_view': 0}}.
+- Per-drone detection in the fused run (all frames / hover frames): {'drone1': {'in_view': 36, 'detected': 36, 'in_view_hover': 35, 'detected_hover': 35}, 'drone2': {'in_view': 28, 'detected': 28, 'in_view_hover': 27, 'detected_hover': 27}, 'drone3': {'in_view': 0, 'detected': 0, 'in_view_hover': 0, 'detected_hover': 0}, 'drone4': {'in_view': 0, 'detected': 0, 'in_view_hover': 0, 'detected_hover': 0}}.
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- check `fused_le_best_single`: PASS
+- **Result: PASS**
+
+## No-drone-video test (extended run)
+
+- Server started on 127.0.0.1:18765 (real `server.main` handler).
+- `/viewer`: 1 `<video>` tag(s); getUserMedia present: True; video-endpoint hints found: none.
+- `/api/markers`: 7 SSE events read in 3 s; all parse as JSON with type marker/none: True; content-type text/event-stream, no video content-type anywhere: True.
+- Unknown routes probed (12): all 404: True ({'/video': 404, '/stream': 404, '/frames': 404, '/api/video': 404, '/api/frames': 404, '/drone': 404, '/api/drone': 404, '/snapshot': 404, '/mjpeg': 404, '/api/markers/1': 404, '/admin': 404, '/api/status/extra': 404}).
+- check `root_redirects_to_viewer`: PASS
+- check `viewer_200_html`: PASS
+- check `exactly_one_video_tag`: PASS
+- check `no_img_tag`: PASS
+- check `no_fetch_or_xhr`: PASS
+- check `no_drone_stream_reference`: PASS
+- check `uses_getusermedia`: PASS
+- check `no_video_content_type`: PASS
+- check `status_json_shape`: PASS
+- check `status_new_fields_null_before_first_frame`: PASS
+- check `operator_200_html`: PASS
+- check `operator_no_video_tag`: PASS
+- check `operator_no_img_tag`: PASS
+- check `operator_no_video_content_type`: PASS
+- check `operator_has_three_blocks`: PASS
+- check `operator_facts_dash_before_first_frame`: PASS
+- check `sse_content_type`: PASS
+- check `sse_no_video_content_type`: PASS
+- check `sse_events_received`: PASS
+- check `sse_all_json`: PASS
+- check `sse_types_json_only`: PASS
+- check `unknown_routes_all_404`: PASS
+- **Result: PASS**
+
+## UI server part — real-only tests (extended run)
+
+- **wording**: PASS
+  - check `viewer_no_banned_words`: PASS
+  - check `operator_no_banned_words`: PASS
+  - check `operator_no_video_tag`: PASS
+  - check `operator_no_img_tag`: PASS
+- **product-server-refuses**: PASS
+  - check `live_exits_nonzero`: PASS
+  - check `live_serves_nothing`: PASS
+  - check `virtual_exits_nonzero`: PASS
+  - check `virtual_serves_nothing`: PASS
+  - check `live_error_names_djitellopy_or_tello`: PASS
+  - check `virtual_error_points_at_test_entry`: PASS
+  - product server --mode live: exit 2
+  - product server --mode virtual: exit 2
+- **sse-none-while-bridge-invalid**: PASS
+  - check `bridge_invalid_seen`: PASS
+  - check `sse_content_type`: PASS
+  - check `sse_events_received`: PASS
+  - check `sse_all_json`: PASS
+  - check `sse_only_none_while_bridge_invalid`: PASS
+  - SSE events read: 4; types seen: ['none']
+- **operator-dash-before-first-frame**: PASS
+  - check `operator_200`: PASS
+  - check `facts_fDrones_is_dash`: PASS
+  - check `facts_fTracks_is_dash`: PASS
+  - check `facts_fMarkers_is_dash`: PASS
+  - check `facts_fUptime_is_dash`: PASS
+  - check `facts_fLastFrame_is_dash`: PASS
+  - check `facts_fFrames10_is_dash`: PASS
+  - check `status_last_frame_age_null`: PASS
+  - check `status_frames_last_10s_null`: PASS
+  - check `status_tracks_zero_is_real_not_shown`: PASS
+- **viewer-zero-skeletons**: PASS
+  - check `chrome_available`: PASS
+  - check `driver_returned_json`: PASS
+  - check `driver_ok`: PASS
+  - check `stream_was_live`: PASS
+  - check `no_markers_held`: PASS
+  - check `no_distance_pills`: PASS
+  - check `zero_skeleton_pixels`: PASS
+  - check `no_console_errors`: PASS
+  - viewer canvas 800x600: 0 non-transparent pixels after 60 s of none events; markers held: 0; distance pills: 0; last SSE event 553 ms before the read; console errors: none.
+- **Result: PASS**
+
+## Found and fixed (extended suite)
+
+- Bridge.reacquire() implemented (2026-11-23): tracking loss used to invalidate the bridge permanently (reacquire() raised NotImplementedError), so a loss+recovery scenario could never pass. A fresh valid pose after a loss now starts a NEW chain (uncertainty clock restarts at 0.10 m) via Bridge.reacquire(), wired into Bridge.update(). The virtual harness proves the state-machine logic (marker hidden during loss, returns only after re-establishment + a fresh detection); real relocalisation is still unproven and must gate reacquire in the real system. Required by s21_loss_recovery.
+- Triangulation cross-check (2026-11-23): estimate_person_depth now compares the triangulated depth against the per-frame bbox-height depth and trusts the bbox-height estimate when they disagree by >25% (relative). Measured: static scenes agree within ~14% max (mean 11-13% across s1/s2/s3/s4/s7/s11/s12/s25), while a moving person (s18: up to 59%), an occluded person (s15: up to 93%) and mixed two-person rays (s19: up to 100%) disagree far beyond it. The triangulation residual does NOT catch this — a moving person's rays can genuinely nearly meet at a wrong point (measured residual <= 0.15 while the depth was 1.3 m off) — so the cross-check is the signal, not the residual. The bbox-height estimate is per-frame (no static-scene assumption) with a measured +20-34 cm bias, so it is the safe fallback.
+- Per-person depth histories in Pipeline (2026-11-23): the depth history must contain views of ONE person only. The max-conf detection can alternate between two people, and mixing their rays triangulated a ghost point between them (measured in s19: a phantom track at (0, 7.4 m) and triangulated depths of 0.01-0.22 m). Each person now keeps a separate history, associated by a rough foot point within 1.0 m of that person's last foot (the 1.0 m gate matches the fusion's association distance). A single person keeps exactly one history, so single-person behaviour is unchanged. A moving person moves ~0.03 m/frame, so the association never fires on motion alone.
+- Ankle ray for partial detections (2026-11-23): when the detector misses >= 3 joints, the person is partly occluded and the bbox is the visible part's box — its bottom-centre is laterally offset and its height is short, so both depth methods share a common-mode bias the cross-check cannot catch (measured in s15: triangulation 3.11 m and bbox-height 2.86 m agreed, yet the true depth was 2.51 m). The triangulation and foot point then use the visible-ankle ray (partial_foot_uv), a stable world point that does not move with the occlusion; the ankle-derived foot is projected straight down to y = 0 (ground contact). Measured separation: full-person frames miss 0-1 joints, occluded frames (s15) miss 3-9, so the gate never fires on a full person and the original 7 scenarios are untouched.
+
+## Honest limits — extended scenarios (what this still does NOT prove)
+
+- Virtual poses are exact: the bridge is fed the true drone pose, so no SLAM drift is simulated. The bridge uncertainty (0.10 + 0.02 s/s, capped at 1.0 m) is a model, not a measurement. The research report's end-to-end budget (±20-60 cm at 3-6 m with good depth, ±0.5-2 m monocular/Tello) still stands for the real system.
+- s23_blank_door stresses a featureless wall at the doorway, but the virtual bridge does not do visual feature tracking at all (it is fed true poses), so the real VIO bridge stress of a blank wall is NOT measured here — the scenario only proves detection/rendering still works with a blank wall. A real VIO bridge could still lose tracking at a blank doorway.
+- s21_loss_recovery proves the state-machine logic (marker hidden during loss, returns only after re-establishment + a fresh detection). The virtual reacquire stands in for a real relocalisation step with the true pose; a real relocalisation (re-observing a mapped area / doorway loop closure) is not built or tested here.
+- s16_sideways is an approximation: a sideways body is rendered as a narrowed frontal billboard, not a true profile (one shoulder hidden, different arm pose). The measured joint errors are a lower bound on real sideways difficulty.
+- s18_moving: the person walks slowly (0.28 m/s) and triangulation assumes a static scene. See the scenario section for the measured numbers; the residual is the honest signal that the static assumption broke.
+- s15_occluded: the occluder is a flat wardrobe plane drawn after the billboard; a real occluder (doorframe edge, furniture) would also change the person's visible shape in 3D. Detection of a half-hidden person is measured, not assumed.
+- s13_dim_noise uses synthetic Gaussian noise (sigma 12 on 0-255 after a 0.4x brightness factor) — real low-light noise is signal-dependent and coloured; this is a harder test than brightness alone, but not a real night shot.
+- s14_glare uses a bright window quad + a Gaussian bloom (radius 200 px, strength 0.35) — a synthetic glare model, not a real sunlit window with lens flare.
+- Two-person scenarios paste the SAME cutout twice (identical twins). Real second people differ in height, clothing and pose; the merge check (no midpoint marker) is the point of the scenario, not the realism of the second person.
+- One static room pair per scenario, no occlusion beyond s15, no motion blur, no network latency, no live-phone rendering check (the viewer projection is verified by code inspection + the GT phone projection in the scenarios, not by a live phone).
+- Detection at 640 px on CPU.
+
+## Method used per frame (extended scenarios)
+
+Per scenario, frames using triangulation vs bbox-height are counted in the table above. In every person scenario the pipeline switches to triangulation as soon as the drone's motion baseline reaches 0.3 m (a few frames after the person first appears) and stays there; bbox-height is used only for the first 1-3 detections. Exact per-frame method sequences:
+
+- s1_basic: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s2_offcentre: f0-19:-, f20-21:bbox_height, f22-28:triangulation, f29-34:-, f35-59:triangulation
+- s3_close: f0-21:-, f22-22:bbox_height, f23-59:triangulation
+- s4_dim: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s5_tracking_loss: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s6_no_person: f0-59:-
+- s7_two_drones: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s8_wall_close: f0-21:-, f22-22:bbox_height, f23-59:triangulation
+- s9_wall_far: f0-22:-, f23-23:bbox_height, f24-59:triangulation
+- s10_phone_offcentre: f0-23:-, f24-28:bbox_height, f29-40:triangulation, f41-46:-, f47-59:triangulation
+- s11_large_room_far: f0-18:-, f19-19:bbox_height, f20-20:triangulation, f21-22:-, f23-59:triangulation
+- s12_bright: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s24_empty_new_room: f0-59:-
+- s13_dim_noise: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s14_glare: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s15_occluded: f0-22:-, f23-43:bbox_height, f44-59:triangulation
+- s16_sideways: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s17_edge: f0-15:-, f16-17:bbox_height, f18-19:-, f20-48:triangulation, f49-59:bbox_height
+- s18_moving: f0-22:-, f23-23:bbox_height, f24-37:triangulation, f38-59:bbox_height
+- s19_two_people: f0-22:-, f23-24:bbox_height, f25-26:triangulation, f27-27:bbox_height, f28-59:triangulation
+- s20_fast: f0-19:-, f20-20:bbox_height, f21-23:-, f24-48:triangulation, f49-51:-, f52-58:triangulation, f59-59:-
+- s21_loss_recovery: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s22_clutter: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+- s23_blank_door: f0-21:-, f22-22:bbox_height, f23-59:triangulation
+- s25_four_drones: f0-21:-, f22-22:bbox_height, f23-59:triangulation
+- s26_five_drones: f0-21:-, f22-22:bbox_height, f23-59:triangulation
+- s27_four_drones_partial: f0-23:-, f24-28:bbox_height, f29-59:triangulation
+
+## VIO tests
+
+The same Pipeline, but the bridge is fed VIO-estimated poses (``server/vio.py``) instead of ground truth. The VIO is initialised with the first frame's GT pose as the known start pose (the drone takes off beside the phone); from then on only the video frames drive it. The GT-pose runs above are untouched — the VIO results are a separate table so the regression comparison still reads the GT runs.
+
+VIO pose drift is reported against the 60 cm joint-error budget (SPEC.md) — there is no separate VIO threshold, and none was invented. Frame rate is the VIO step alone and the full pipeline with VIO (VIO + detector + depth + bridge + fusion) on CPU; the 10 fps harness needs < 100 ms/frame.
+
+| Scenario (VIO) | VIO valid | Drift mean | Drift max | Yaw err mean | Yaw err max | Yaw err, marker frames | PnP inliers mean/min | VIO fps | Pipeline fps | Detection | Mean joint err | Mean |dist err| | Markers | Bridge-invalid markers | Result |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| s1_basic | 56/60 | 6.7 cm | 21.1 cm | 1.0 deg | 7.6 deg | 3.3 deg | 64/0 | 7.1 | 3.1 | 100% (12/12) | 40.5 cm | 6.0 cm | 10 | 0 | PASS |
+| s23_blank_door | 56/60 | 5.4 cm | 14.7 cm | 0.9 deg | 3.2 deg | 1.1 deg | 57/0 | 9.4 | 3.3 | 100% (13/13) | 32.6 cm | 5.7 cm | 11 | 0 | PASS |
+| s20_fast | 56/60 | 8.3 cm | 71.5 cm | 0.7 deg | 7.2 deg | 2.7 deg | 30/0 | 9.3 | 2.9 | 100% (10/10) | 36.1 cm | 7.5 cm | 11 | 0 | PASS |
+| s4_dim | 56/60 | 3.8 cm | 15.0 cm | 0.7 deg | 5.1 deg | 2.2 deg | 55/0 | 7.1 | 2.2 | 100% (12/12) | 36.3 cm | 6.8 cm | 10 | 0 | PASS |
+
+### VIO fix round 3 — constrained PnP (round 2 vs round 3)
+
+Round 2 (2026-11-23) left joint error over the 60 cm budget in s1_basic (71.8 cm) and s23_blank_door (81.7 cm) with turn yaw error 1.0-1.2 deg mean, 4.0-4.5 deg max corrupting depth triangulation. Round 3 constrains the PnP itself with the Tello attitude prior — see ``server/vio.py`` ``pnp_mode`` — instead of correcting the yaw after the fact (tried and reverted in round 2: drift improved, joint error worsened to 111 cm, because changing R without re-optimising C breaks consistency).
+
+| Scenario | Joint err, round 2 / round 3 | |Dist err|, round 2 / round 3 | Drift mean, round 2 / round 3 | Markers, round 2 / round 3 |
+|---|---|---|---|---|
+| s1_basic | 71.8 cm / 40.5 cm | 35.9 cm / 6.0 cm | 9.8 cm / 6.7 cm | 10 / 10 |
+| s23_blank_door | 81.7 cm / 32.6 cm | 14.0 cm / 5.7 cm | 13.3 cm / 5.4 cm | 11 / 11 |
+| s20_fast | 38.6 cm / 36.1 cm | 18.2 cm / 7.5 cm | 7.9 cm / 8.3 cm | 11 / 11 |
+| s4_dim | 55.2 cm / 36.3 cm | 25.7 cm / 6.8 cm | 4.7 cm / 3.8 cm | 10 / 10 |
+
+### VIO vs ground-truth poses (same scenarios)
+
+| Scenario | Joint err, GT poses | Joint err, VIO poses | |Dist err|, GT poses | |Dist err|, VIO poses | Markers, GT / VIO |
+|---|---|---|---|---|---|
+| s1_basic | 36.1 cm | 40.5 cm | 8.7 cm | 6.0 cm | 34 / 10 |
+| s23_blank_door | 36.0 cm | 32.6 cm | 11.8 cm | 5.7 cm | 36 / 11 |
+| s20_fast | 35.2 cm | 36.1 cm | 7.4 cm | 7.5 cm | 35 / 11 |
+| s4_dim | 35.6 cm | 36.3 cm | 8.0 cm | 6.8 cm | 34 / 10 |
+
+### s1_basic (VIO) — person 4.0 m from phone, centred, light 1.0
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 12; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 48.
+- Markers emitted: 10 (0 stale); joint-error samples: 167; distance-error samples: 10.
+- Worst single-frame joint error: 74.1 cm; worst single-frame distance error: 8.7 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 7}; first triangulation frame: 53.
+- Measured depth bias (estimated - true foot depth): bbox-height -2 cm (n=5); triangulation +8 cm (n=7).
+- Mean signed distance error (marker - GT): -6 cm (negative = marker distance shorter than the true phone->person distance).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 6.7 cm, max 21.1 cm, final 21.1 cm; yaw error mean 1.0 deg, max 7.6 deg, on marker frames 3.3 deg; PnP inliers mean 64, min 0; VIO step 141.2 ms/frame (7.1 fps); full pipeline with VIO 318.3 ms/frame (3.1 fps).
+
+### s23_blank_door (VIO) — featureless blank wall at the doorway (no posters on the shared wall), wall 2.5 m, person 3.6 m (z)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 13; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 47.
+- Markers emitted: 11 (0 stale); joint-error samples: 187; distance-error samples: 11.
+- Worst single-frame joint error: 69.8 cm; worst single-frame distance error: 12.2 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 6, 'triangulation': 7}; first triangulation frame: 53.
+- Measured depth bias (estimated - true foot depth): bbox-height +5 cm (n=6); triangulation -21 cm (n=7).
+- Mean signed distance error (marker - GT): -3 cm (negative = marker distance shorter than the true phone->person distance).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 5.4 cm, max 14.7 cm, final 14.7 cm; yaw error mean 0.9 deg, max 3.2 deg, on marker frames 1.1 deg; PnP inliers mean 57, min 0; VIO step 106.9 ms/frame (9.4 fps); full pipeline with VIO 305.5 ms/frame (3.3 fps).
+
+### s20_fast (VIO) — fast drone: fast approach + fast wide hover (amp 0.9 m, period 1.2 s)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 10; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 50.
+- Markers emitted: 11 (5 stale); joint-error samples: 134; distance-error samples: 8.
+- Worst single-frame joint error: 80.3 cm; worst single-frame distance error: 10.2 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 6, 'triangulation': 4}; first triangulation frame: 51.
+- Measured depth bias (estimated - true foot depth): bbox-height -4 cm (n=6); triangulation -22 cm (n=4).
+- Mean signed distance error (marker - GT): +5 cm (negative = marker distance shorter than the true phone->person distance).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 8.3 cm, max 71.5 cm, final 64.2 cm; yaw error mean 0.7 deg, max 7.2 deg, on marker frames 2.7 deg; PnP inliers mean 30, min 0; VIO step 107.5 ms/frame (9.3 fps); full pipeline with VIO 339.4 ms/frame (2.9 fps).
+
+### s4_dim (VIO) — light 0.5, person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 12; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 48.
+- Markers emitted: 10 (0 stale); joint-error samples: 169; distance-error samples: 10.
+- Worst single-frame joint error: 67.2 cm; worst single-frame distance error: 8.4 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 12}; first triangulation frame: None.
+- Measured depth bias (estimated - true foot depth): bbox-height +1 cm (n=12); triangulation n/a.
+- Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+- VIO: initialised at frame 4; first loss at frame None; valid 56/60 frames; drift mean 3.8 cm, max 15.0 cm, final 15.0 cm; yaw error mean 0.7 deg, max 5.1 deg, on marker frames 2.2 deg; PnP inliers mean 55, min 0; VIO step 141.1 ms/frame (7.1 fps); full pipeline with VIO 444.8 ms/frame (2.2 fps).
+
+### Honest limits — VIO (what this still does NOT prove)
+
+- The harness trajectories have yaw snaps the VIO cannot track: the look-at logic snaps the camera -31 deg at the doorway (frame 13->14) and +101 deg at the turn to face the person (frame 19->20) in a single 0.1 s frame. Measured 2026-11-23: LK carried only 36 of 86 points across the doorway (19 of them hallucinated onto points that had left the frame); ORB descriptor matching found 0 geometrically correct matches across the doorway snap on this repetitive checker floor, and a photometric yaw search found the wrong yaw (-54 deg vs -31 deg GT; +33 deg vs +101 deg GT) because near-wall parallax dominates the photometric error. A real Tello flight yaws at ~30-60 deg/s (1-2 deg/frame at 30 fps), not 300-1000 deg/s — the snaps are a harness artifact, and the real-run procedure is to fly and turn smoothly (see README.md).
+- The smooth-flight ground test (``tests/vio_ground_test.py``) is the end-to-end VIO validation on a realistic flight (no snaps): approach + pass + most of the turn track with 9.2 cm mean drift, then tracking is lost mid-turn when the map drains in rotation-dominant motion (the camera translates only ~2.7 cm/frame while yawing 3.4 deg/frame, so new points cannot reach the 0.15 m triangulation baseline before leaving the frame). The bridge invalidates correctly there — no guessed pose, no marker.
+- VIO reacquire in this harness proves the state-machine logic only (same caveat as s21): a fresh VIO pose after loss re-establishes the bridge only when VIO reports solid re-tracking. In the real system reacquire must be gated on genuine relocalisation (re-observing a mapped area / doorway loop closure), which is not built here.
+- No loop closure and no bundle adjustment: odometry drift grows with distance travelled, and the map distorts non-rigidly (measured: the map's reprojection error at the GT pose grows to ~11 px by the turn, which the PnP absorbs as pose drift). The ground-test drift (9.2 cm mean, 33.6 cm max) is the honest measure of that.
+- The VIO step runs on CPU at ~40-90 fps alone; the full pipeline with VIO is dominated by the YOLO detector (see the pipeline fps column).
+
+## Depth-model tests (monocular third voter)
+
+Model: Depth Anything V2 Small (`depth-anything/Depth-Anything-V2-Small-hf`, transformers, fp32, CPU) — 24.8M params, 95 MB weights (Apache-2.0). The alternative, ZoeDepth (`Intel/zoedepth-nyu-kitti`, DPT-Large backbone, metric output), is ~1.37 GB fp32 — ~14x larger than DA-V2-Small and larger than the ~1.2 GB free RAM on this machine — so it was excluded on measured download size / RAM before any inference run, and its CPU inference time was not measured. DA-V2-Small outputs RELATIVE depth only; its metric scale comes from a MEASURED per-frame anchor — a robust linear fit true_z = a * model + b over floor pixels, where the true depth follows from the ray / y = 0 plane intersection using the known drone pose (camera height above the floor). No hard-coded scale constant anywhere: the fit is accepted only with >= 20 floor samples, residual RMS <= 0.35 m and |Pearson r| >= 0.8, otherwise there is no model vote that frame. The person depth is the fitted value at the median model value over the visible keypoint pixels.
+
+Voting rule (server/depth.py: ``fuse_with_model_votes``): the model NEVER replaces triangulation as the primary method. When triangulation and bbox-height agree (<= 25%), the model stays OUT — there is nothing to vote on, and its measured error is larger than triangulation's. When they disagree (> 25%), the model arbitrates: it backs triangulation (outcome changes vs the legacy bbox-height fallback) or bbox-height (same outcome), and if it agrees with neither the legacy fallback stands. Pure arbitration: the winner's depth is returned EXACTLY, never fused with the model. Fusing the model depth into the winner was tried first and measured to hurt — in s15_occluded it took joint error 59.3 -> 64.5 cm (agree-case fusion) and 59.3 -> 64.3 cm (disagree-case refinement), because the occluder biases the model vote the same way it biases the bbox. Without triangulation the model does nothing (bbox-height alone). The model sigma carries a floor of 0.15 * depth (server/mono_depth.py): the floor-fit residual alone understates the model's real error (probe mean |err| 5-47 cm clean, 57-71 cm occluded, vs a ~0.2 m fit sigma) — the floor keeps the vote's stated uncertainty honest. The model runs in a background thread, at most every 10th detection frame (1 Hz at the 10 fps harness rate — every 5th frame kept the worker busy ~100% of the time and cost 7-28% of pipeline fps to CPU contention on this 1.5-CPU VM, while the disagreements it arbitrates persist for many frames, so 1 Hz loses nothing), on a 256x192 copy; the pipeline reads only the latest completed vote, age-gated to 2.0 s with the sigma inflated 0.2 m/s of age. The marker path never waits for it. The model's torch thread count is left at the process default so the YOLO detector's threading is identical with the voter on or off.
+
+### Model choice — measured size / CPU latency
+
+| Model | Params | Weights | Licence | CPU inference (this machine) |
+|---|---|---|---|---|
+| Depth Anything V2 Small | 24.8M | 95 MB | Apache-2.0 | 256x192: 960 ms; 336x252: 1228 ms; 518x388: 2975 ms (single frame, process-default thread count; the pipeline uses 256x192) |
+| ZoeDepth (nyu-kitti) | ~345M (DPT-Large) | ~1.37 GB fp32 | MIT | not measured — excluded on size / RAM (see above) |
+
+Model calls / votes over the whole depth-model suite: {'n_calls': 61, 'n_votes': 56, 'ms_mean': 697.4128671428831, 'ms_min': 314.3046579998554, 'ms_max': 1282.8092889999425}.
+
+### Baseline (two methods) vs model voter — same scenarios, GT poses
+
+| Scenario | Joint err base / +model | |Dist err| base / +model | Model depth err mean |worst| (n) | Voter changed (frames) | Pipeline fps base / +model | Result base / +model |
+|---|---|---|---|---|---|---|
+| s1_basic | 36.1 cm / 36.1 cm | 8.7 cm / 8.7 cm | +12 cm | 54 cm (n=28) | 0 | 5.2 / 4.9 | PASS / PASS |
+| s2_offcentre | 35.5 cm / 35.5 cm | 0.9 cm / 0.9 cm | +7 cm | 68 cm (n=19) | 0 | 5.0 / 5.1 | PASS / PASS |
+| s3_close | 37.6 cm / 37.6 cm | 13.4 cm / 13.4 cm | +21 cm | 56 cm (n=29) | 0 | 5.1 / 4.4 | PASS / PASS |
+| s4_dim | 35.6 cm / 35.6 cm | 8.0 cm / 8.0 cm | +11 cm | 47 cm (n=29) | 0 | 4.6 / 4.8 | PASS / PASS |
+| s13_dim_noise | 36.8 cm / 36.8 cm | 8.9 cm / 8.9 cm | -2 cm | 42 cm (n=29) | 0 | 5.4 / 5.9 | PASS / PASS |
+| s14_glare | 36.4 cm / 36.4 cm | 8.4 cm / 8.4 cm | +13 cm | 48 cm (n=29) | 0 | 5.4 / 3.6 | PASS / PASS |
+| s15_occluded | 42.1 cm / 42.1 cm | 16.3 cm / 16.3 cm | -4 cm | 132 cm (n=29) | 0 | 5.3 / 3.0 | PASS / PASS |
+| s18_moving | 48.1 cm / 48.1 cm | 12.6 cm / 12.6 cm | +30 cm | 78 cm (n=29) | 0 | 5.5 / 2.5 | PASS / PASS |
+| s11_large_room_far | 31.9 cm / 31.9 cm | 6.7 cm / 6.7 cm | +48 cm | 71 cm (n=29) | 0 | 5.5 / 3.3 | PASS / PASS |
+| s20_fast | 35.2 cm / 35.2 cm | 7.4 cm / 7.4 cm | +13 cm | 78 cm (n=25) | 0 | 5.1 / 2.8 | PASS / PASS |
+| s23_blank_door | 36.0 cm / 36.0 cm | 11.8 cm / 11.8 cm | +35 cm | 81 cm (n=29) | 0 | 4.8 / 2.2 | PASS / PASS |
+| s17_edge | 32.6 cm / 32.6 cm | 4.5 cm / 4.5 cm | n/a | 0 | 5.0 / 2.2 | PASS / PASS |
+| s7_two_drones | 34.1 cm / 34.1 cm | 6.6 cm / 6.6 cm | +10 cm | 67 cm (n=21) | 0 | 2.4 / 1.9 | PASS / PASS |
+
+Per-scenario detail (model runs) follows; the baseline detail is in the extended-results section above. The model-vote error is the floor-anchored model depth minus the GT foot depth, pooled over frames where a vote was available — it is the model's own error, not the fused pipeline error.
+
+### s1_basic — person 4.0 m from phone, centred, light 1.0
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 576; distance-error samples: 34.
+- Worst single-frame joint error: 64.2 cm; worst single-frame distance error: 9.9 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -0 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 204.9 ms/frame mean (4.9 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +12 cm, mean |err| 20 cm, worst 54 cm (n=28 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s2_offcentre — person 5.5 m from phone, off to the side near the doorway
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 34; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 26.
+- Markers emitted: 36 (4 stale); joint-error samples: 544; distance-error samples: 32.
+- Worst single-frame joint error: 63.6 cm; worst single-frame distance error: 2.4 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 2, 'triangulation': 32}; first triangulation frame: 22.
+- Measured depth bias (estimated - true foot depth): bbox-height +1 cm (n=2); triangulation -3 cm (n=32).
+- Mean signed distance error (marker - GT): -1 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 194.8 ms/frame mean (5.1 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +7 cm, mean |err| 39 cm, worst 68 cm (n=19 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s3_close — person just behind the wall (z = 3.3 m)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 38; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 22.
+- Markers emitted: 36 (0 stale); joint-error samples: 612; distance-error samples: 36.
+- Worst single-frame joint error: 62.2 cm; worst single-frame distance error: 15.2 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
+- Measured depth bias (estimated - true foot depth): bbox-height -7 cm (n=1); triangulation +2 cm (n=37).
+- Mean signed distance error (marker - GT): -13 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 225.1 ms/frame mean (4.4 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +21 cm, mean |err| 21 cm, worst 56 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s4_dim — light 0.5, person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 578; distance-error samples: 34.
+- Worst single-frame joint error: 61.4 cm; worst single-frame distance error: 10.9 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height +2 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 210.2 ms/frame mean (4.8 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +11 cm, mean |err| 15 cm, worst 47 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s13_dim_noise — light 0.4x with REAL Gaussian noise (sigma 12), person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 556; distance-error samples: 34.
+- Worst single-frame joint error: 64.3 cm; worst single-frame distance error: 9.8 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height +0 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -9 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 170.6 ms/frame mean (5.9 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean -2 cm, mean |err| 21 cm, worst 42 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s14_glare — bright window directly behind the person + bloom (backlit), person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 34 (0 stale); joint-error samples: 578; distance-error samples: 34.
+- Worst single-frame joint error: 64.1 cm; worst single-frame distance error: 9.0 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=5); triangulation -3 cm (n=31).
+- Mean signed distance error (marker - GT): -8 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 278.8 ms/frame mean (3.6 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +13 cm, mean |err| 13 cm, worst 48 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s15_occluded — person partly hidden behind a wardrobe (~40% of the body covered), person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 37; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 23.
+- Markers emitted: 35 (0 stale); joint-error samples: 548; distance-error samples: 35.
+- Worst single-frame joint error: 79.5 cm; worst single-frame distance error: 25.8 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 21, 'triangulation': 16}; first triangulation frame: 44.
+- Measured depth bias (estimated - true foot depth): bbox-height +7 cm (n=21); triangulation +27 cm (n=16).
+- Mean signed distance error (marker - GT): -16 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 335.3 ms/frame mean (3.0 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean -4 cm, mean |err| 66 cm, worst 132 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s18_moving — person walking slowly (0.25 m/s across, 0.12 m/s toward the wall) — triangulation assumes a static scene
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 37; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 23.
+- Markers emitted: 35 (0 stale); joint-error samples: 595; distance-error samples: 35.
+- Worst single-frame joint error: 122.9 cm; worst single-frame distance error: 22.6 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 23, 'triangulation': 14}; first triangulation frame: 24.
+- Measured depth bias (estimated - true foot depth): bbox-height +2 cm (n=23); triangulation -5 cm (n=14).
+- Mean signed distance error (marker - GT): +13 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 403.9 ms/frame mean (2.5 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +30 cm, mean |err| 30 cm, worst 78 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s11_large_room_far — larger room B (x +-4 m, z to 12 m), person 7.0 m (z) from phone
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 39; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 21.
+- Markers emitted: 37 (0 stale); joint-error samples: 592; distance-error samples: 37.
+- Worst single-frame joint error: 71.4 cm; worst single-frame distance error: 6.9 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 38}; first triangulation frame: 20.
+- Measured depth bias (estimated - true foot depth): bbox-height +21 cm (n=1); triangulation +1 cm (n=38).
+- Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 300.6 ms/frame mean (3.3 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +48 cm, mean |err| 48 cm, worst 71 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s20_fast — fast drone: fast approach + fast wide hover (amp 0.9 m, period 1.2 s)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 33; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 27.
+- Markers emitted: 35 (4 stale); joint-error samples: 527; distance-error samples: 31.
+- Worst single-frame joint error: 65.7 cm; worst single-frame distance error: 7.6 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 32}; first triangulation frame: 24.
+- Measured depth bias (estimated - true foot depth): bbox-height -1 cm (n=1); triangulation -4 cm (n=32).
+- Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 361.6 ms/frame mean (2.8 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +13 cm, mean |err| 44 cm, worst 78 cm (n=25 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s23_blank_door — featureless blank wall at the doorway (no posters on the shared wall), wall 2.5 m, person 3.6 m (z)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 38; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 22.
+- Markers emitted: 36 (0 stale); joint-error samples: 612; distance-error samples: 36.
+- Worst single-frame joint error: 66.3 cm; worst single-frame distance error: 12.2 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 1, 'triangulation': 37}; first triangulation frame: 23.
+- Measured depth bias (estimated - true foot depth): bbox-height -6 cm (n=1); triangulation +0 cm (n=37).
+- Mean signed distance error (marker - GT): -12 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 464.7 ms/frame mean (2.2 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +35 cm, mean |err| 35 cm, worst 81 cm (n=29 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s17_edge — person at the very edge of the drone frame (billboard right edge ~30 px from the frame edge); drone looks at a fixed point, not at the person
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 42; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 18.
+- Markers emitted: 40 (0 stale); joint-error samples: 680; distance-error samples: 40.
+- Worst single-frame joint error: 74.8 cm; worst single-frame distance error: 7.3 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 13, 'triangulation': 29}; first triangulation frame: 20.
+- Measured depth bias (estimated - true foot depth): bbox-height +11 cm (n=13); triangulation +5 cm (n=29).
+- Mean signed distance error (marker - GT): +5 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 464.4 ms/frame mean (2.2 fps).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s7_two_drones — two drones, different hover points, both see the person
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 36; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 24.
+- Markers emitted: 35 (0 stale); joint-error samples: 595; distance-error samples: 35.
+- Worst single-frame joint error: 65.2 cm; worst single-frame distance error: 7.4 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 31}; first triangulation frame: 29.
+- Measured depth bias (estimated - true foot depth): bbox-height -4 cm (n=5); triangulation -2 cm (n=23).
+- Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
+- Pipeline latency (process_frame, incl. detector): 529.5 ms/frame mean (1.9 fps).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +10 cm, mean |err| 29 cm, worst 67 cm (n=21 frames with a vote); voter changed the outcome on 0 frame(s).
+- Fused mean joint error, hover frames 25-59: 34.1 cm; single-drone mean joint error over the same frames: drone1 36.4 cm, drone2 37.6 cm; best single: 36.4 cm. Single-drone detection (hover frames): {'drone1': {'detected': 35, 'in_view': 35}, 'drone2': {'detected': 27, 'in_view': 27}}.
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- check `fused_le_best_single`: PASS
+- **Result: PASS**
+
+### Model voter on the VIO path (same 4 VIO scenarios)
+
+| Scenario (VIO) | VIO valid | Joint err VIO-only / VIO+model | |Dist err| VIO-only / VIO+model | Model err mean |worst| | Voter changed | Pipeline fps VIO-only / VIO+model | Result VIO-only / VIO+model |
+|---|---|---|---|---|---|---|---|
+| s1_basic | 56/60 | 40.5 cm / 40.5 cm | 6.0 cm / 6.0 cm | -3 cm | 13 cm (n=9) | 0 | 3.1 / 2.2 | PASS / PASS |
+| s23_blank_door | 56/60 | 32.6 cm / 32.6 cm | 5.7 cm / 5.7 cm | +15 cm | 31 cm (n=9) | 0 | 3.3 / 2.1 | PASS / PASS |
+| s20_fast | 56/60 | 36.1 cm / 36.1 cm | 7.5 cm / 7.5 cm | +9 cm | 35 cm (n=6) | 0 | 2.9 / 3.6 | PASS / PASS |
+| s4_dim | 56/60 | 36.3 cm / 36.3 cm | 6.8 cm / 6.8 cm | +1 cm | 16 cm (n=9) | 0 | 2.2 / 3.4 | PASS / PASS |
+
+### s1_basic (VIO) — person 4.0 m from phone, centred, light 1.0
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 12; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 48.
+- Markers emitted: 10 (0 stale); joint-error samples: 167; distance-error samples: 10.
+- Worst single-frame joint error: 74.1 cm; worst single-frame distance error: 8.7 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 5, 'triangulation': 7}; first triangulation frame: 53.
+- Measured depth bias (estimated - true foot depth): bbox-height -2 cm (n=5); triangulation +8 cm (n=7).
+- Mean signed distance error (marker - GT): -6 cm (negative = marker distance shorter than the true phone->person distance).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean -3 cm, mean |err| 8 cm, worst 13 cm (n=9 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s23_blank_door (VIO) — featureless blank wall at the doorway (no posters on the shared wall), wall 2.5 m, person 3.6 m (z)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 13; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 47.
+- Markers emitted: 11 (0 stale); joint-error samples: 187; distance-error samples: 11.
+- Worst single-frame joint error: 69.8 cm; worst single-frame distance error: 12.2 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 6, 'triangulation': 7}; first triangulation frame: 53.
+- Measured depth bias (estimated - true foot depth): bbox-height +5 cm (n=6); triangulation -21 cm (n=7).
+- Mean signed distance error (marker - GT): -3 cm (negative = marker distance shorter than the true phone->person distance).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +15 cm, mean |err| 15 cm, worst 31 cm (n=9 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s20_fast (VIO) — fast drone: fast approach + fast wide hover (amp 0.9 m, period 1.2 s)
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 10; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 50.
+- Markers emitted: 11 (5 stale); joint-error samples: 134; distance-error samples: 8.
+- Worst single-frame joint error: 80.3 cm; worst single-frame distance error: 10.2 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 6, 'triangulation': 4}; first triangulation frame: 51.
+- Measured depth bias (estimated - true foot depth): bbox-height -4 cm (n=6); triangulation -22 cm (n=4).
+- Mean signed distance error (marker - GT): +5 cm (negative = marker distance shorter than the true phone->person distance).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +9 cm, mean |err| 11 cm, worst 35 cm (n=6 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### s4_dim (VIO) — light 0.5, person 4.5 m
+
+- Frames: 60 @ 10 fps; in-view frames (whole person in frame, >= 80 px tall): 12; frames excluded from the metrics (person partly out of frame, e.g. drone flying past them): 48.
+- Markers emitted: 10 (0 stale); joint-error samples: 169; distance-error samples: 10.
+- Worst single-frame joint error: 67.2 cm; worst single-frame distance error: 8.4 cm (means hide bad frames — these do not).
+- Markers emitted while the bridge was invalid: 0 (must be 0).
+- Depth methods: {'bbox_height': 12}; first triangulation frame: None.
+- Measured depth bias (estimated - true foot depth): bbox-height +1 cm (n=12); triangulation n/a.
+- Mean signed distance error (marker - GT): -7 cm (negative = marker distance shorter than the true phone->person distance).
+- Monocular model vote (Depth Anything V2 Small, floor-anchored): depth error vs GT foot depth mean +1 cm, mean |err| 8 cm, worst 16 cm (n=9 frames with a vote); voter changed the outcome on 0 frame(s).
+- check `detection_rate`: PASS
+- check `joint_error`: PASS
+- check `distance_error`: PASS
+- check `scale_error`: PASS
+- check `marker_while_bridge_invalid`: PASS
+- **Result: PASS**
+
+### Honest limits — depth model (what this still does NOT prove)
+
+- The floor anchor needs visible floor in the lower frame: a drone looking level or up, or a floor with no texture / a mirror floor, gives no fit and therefore no vote — the pipeline then falls back to the two-method behaviour silently (by design: no vote is better than a guessed scale). The virtual floor is a high-contrast checker; a real plain floor may fit worse — the fit RMS / correlation gates are the honest check, and their pass rate on real footage is unmeasured.
+- s17_edge produced NO model vote at all (0 of 4 calls): the floor-fit residual RMS there is 0.74-0.75 m, above the 0.35 m gate (|r| = 0.81 passes, barely). The drone sits deep in room B (z ~ 3.8 m) looking at a fixed point, so the floor samples span 2.5-6.9 m of true depth and the model's output is not affine in depth over that range — the gate working as designed, not a bug: a bad fit must not vote. The s17 mono run therefore reproduces its baseline exactly. Restricting the fit to nearer floor (as the VIO scale does) might recover votes there; it was NOT done — it would change the fit for every scenario and needs its own measurement round.
+- The model vote is sampled at the keypoint pixels: an occluder in front of the person can contaminate it (measured in s15_occluded: worst model error 137 cm on one frame). The outlier drop in the voting rule is what keeps a bad model frame out of the fused depth; the raw model error is still reported above, not hidden.
+- The model is per-frame (no static-scene assumption), which is why it can arbitrate a moving person — but its own error (~15-47 cm mean |err| in the scenarios above) is larger than triangulation's in static scenes, so it is a pure arbitrator, not a refiner: it only ever flips the choice between triangulation and bbox-height, and it flipped that choice on 0 frames in this suite (see the voter-changed column — the mono runs reproduce the baseline exactly). Its value is for the case the virtual suite does not contain: triangulation right and bbox-height badly wrong on the same frame (e.g. a crouching or half-out-of-frame person whose bbox height collapses). The flip logic itself is proven by direct checks of ``fuse_with_model_votes`` (disagree-backs-tri returns triangulation with voter_changed=True).
+- The background worker makes the model runs timing-dependent: which frames carry a vote depends on worker speed on the day, so the model-run numbers reproduce approximately, not exactly, unlike the deterministic baseline. The regression comparison above still reads the baseline (model-off) runs.
+- Latency is measured on this shared 1.5-CPU VM with the YOLO detector running concurrently; a real laptop (more cores, no shared-CPU throttle) will differ. The pipeline fps numbers are process_frame only (rendering excluded).
+
+## VIO improvement — calibration + third yaw (2026-11-23)
+
+Two separate pieces, built and measured independently after round 3
+left the 1-DoF yaw PnP fragile to prior error (a (yaw+2, pitch-1,
+roll+1) deg offset fails s1/s20/s4 at 80.0-93.9 cm). Test script:
+``tests/vp_yaw_test.py`` (three passes; it does NOT edit
+``tests/run_tests.py``). Full per-frame numbers:
+``tests/vp_yaw_results.json``.
+
+### Piece 1 — yaw calibration (tool + procedure, NOT a number)
+
+``tools/calibrate_tello.py`` + ``docs/TELLO_CALIBRATION.md`` are a
+complete standalone §6.9 procedure (fly 1 m, integrate both ways,
+yaw mid-translation, yaw accuracy, height vs tape, VPS-blind,
+latency). The new part is the **yaw gate**: the script now reports
+yaw sigma AND doorway bias (mean signed yaw error during the
+doorway turn minus during straight flight) and prints a plain
+`YAW GATE: PASS/FAIL` verdict. **Pass criterion: sigma <= 1.5 deg
+AND |doorway bias| <= 1.5 deg, else the real test must NOT
+proceed.** Two real bugs in the write path were found and fixed
+while verifying it end-to-end (the dataclass had no `yaw_sigma_deg`
+field; the constructor was passed a non-existent
+`state_latency_s`). Self-test (synthetic data, venv python, exit
+0): dm/s/global recovered (err 0.090 m), cm/s/body recovered (err
+0.014 m); yaw sigma 1.0 deg -> recovered RMS 0.89 deg, bias 0.54
+deg, gate PASS; sigma 2.5 deg -> RMS 2.31 deg, bias 1.28 deg, gate
+FAIL; sigma 1.0 deg + bias +3.0 deg -> RMS 2.47 deg, bias 3.44 deg,
+gate FAIL. End-to-end CLI verified on synthetic recordings (PASS
+at sigma 1.0, FAIL at sigma 2.5; `calibration.json` written).
+`tests/test_tello_state.py` still 9/9 after the dataclass change.
+**Honest limit: the REAL calibration awaits a real drone — no real
+calibration is claimed here.** The results table in
+`docs/TELLO_CALIBRATION.md` stays empty until then.
+
+### Piece 2 — third yaw measurement: vanishing-point / Manhattan compass
+
+New module ``server/vp_yaw.py`` (``estimate_vp_yaw(frame, K,
+yaw_hint_deg, pitch_roll_deg) -> dict | None``). LSD lines (the
+venv's OpenCV 5.1.0 exposes LSD — no new dependency), vertical VP
+by RANSAC + SVD refine, horizontal VPs by sequential RANSAC
+(horizon + orthogonality checks), yaw from the VP directions. The
+magnetometer yaw is required as a hint: a horizontal VP is the
+world X axis or the world Z axis, 90 deg apart, and both
+assignments are self-consistent.
+
+Two fixes found by measurement, both wrong in the first build:
+- **Axis angles are mod 180, not mod 360.** A line's vanishing
+  point is the same for both directions along the line. The first
+  build averaged the two assignment yaws with a plain circular
+  mean; the wrong assignment's two yaws are 180 deg apart, whose
+  circular mean is garbage — it showed up as exactly +-90 deg yaw
+  errors on half the frames. Fixed by normalising each axis angle
+  to (-90, 90], averaging assignment yaws only on the same mod-180
+  branch, and expanding to mod-360 aliases before the hint picks.
+- **The vertical VP is validated against the pitch/roll prior.**
+  During the doorway turn, world-Z lines run toward the camera and
+  look near-vertical in the image, so the vertical-VP RANSAC
+  latched onto the Z VP (measured: the found "vertical VP" was
+  5-10 deg from the true Z axis and 90-100 deg from true Y in s1
+  f19/f22 and s23 f8/f25, sending the yaw 10-45 deg wrong). A
+  vertical VP more than 10 deg from the prior up direction is
+  rejected: gravity comes from the prior and no lines are removed
+  as "vertical" (the horizon check filters true vertical lines
+  out of the horizontal VPs instead). The attitude prior is trusted
+  here — the round-3 fragility was yaw, not pitch/roll.
+- A horizontal VP needs >= 12 supporting lines (raised from 5):
+  in the s4 end frames a VP from 6-9 spurious lines gave a yaw
+  27-40 deg wrong; every good frame has >= 29.
+
+#### Pass 1 — VP yaw vs GT yaw per frame (GT hint + GT pitch/roll)
+
+| Scenario | Avail | Err mean | |Err| mean | Err std | Err p90 | Err max | 2-VP frames | Vert VP rejected | Gravity vp / prior | ms/frame |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| s1_basic | 44/60 (73%) | -0.08 deg | 0.74 deg | 1.20 deg | 2.03 deg | 3.24 deg | 19 | 27 | 17 / 27 | 60.9 (p90 75.6) |
+| s23_blank_door | 49/60 (82%) | -0.03 deg | 0.61 deg | 0.94 deg | 1.49 deg | 2.76 deg | 26 | 45 | 3 / 46 | 64.4 (p90 78.8) |
+| s20_fast | 42/60 (70%) | -0.06 deg | 0.67 deg | 1.14 deg | 2.11 deg | 3.41 deg | 19 | 26 | 16 / 26 | 63.6 (p90 83.9) |
+| s4_dim | 36/60 (60%) | +0.18 deg | 0.49 deg | 0.95 deg | 1.89 deg | 3.29 deg | 19 | 20 | 16 / 20 | 59.5 (p90 76.7) |
+
+Pooled VP yaw sigma = **1.07 deg** (used as sigma_vp in the fusion
+passes). The VP yaw is unbiased (mean error -0.08 to +0.18 deg) and
+accurate to ~0.5-0.7 deg mean absolute error — better than the
+magnetometer prior (sigma ~2 deg). Availability is 60-82%: the
+missing frames are mid-turn (f31-34, f48-57 in s1, where the camera
+looks at the doorway wall with too few horizontal lines) and the s4
+end frames (correctly rejected, not wrong). The blank-door scenario
+s23 has the HIGHEST availability (82%) — the feared "no lines at
+the blank door" did not happen; the room's other walls/floor still
+supply lines. The vertical VP is rejected most of the time (27-45
+of the available frames), so gravity comes from the prior more
+often than from vision — the VP yaw itself is still vision, the
+prior only supplies the up direction.
+
+Half-resolution (480x360, K halved) is essentially free: same
+availability (44/49/42/36), |err| mean 0.54-0.76 deg (vs 0.49-0.74
+full-res), max 2.35-3.41 deg, at 36-39 ms/frame (vs 59-64). A real
+integration can run it half-res.
+
+Pass 1b (noisy prior: hint = GT yaw + N(0, 2 deg), pitch/roll = GT
++ N(0, 1 deg)): avail 40-46/60, |err| mean 0.52-0.68 deg, max
+1.91-4.01 deg. The VP measurement does NOT depend on a perfect
+prior.
+
+#### Pass 2 — fusion into the VIO prior (clean prior)
+
+The run_vio_scenario loop replicated with a FusedPrior (a
+StatePrior subclass, test-script only) whose R_prior(t) is the
+circular 1/sigma^2-weighted mean of the magnetometer yaw and the
+VP yaw (sigma_prior 2 deg, sigma_vp 1.07 deg), gated to fuse only
+when |VP yaw - prior yaw| < 10 deg. Joint error vs the round-3
+VIO baseline (60 cm budget):
+
+| Scenario | Joint, fusion / round-3 baseline | Change | Detection | VIO valid | Drift mean | Yaw err mean (marker frames) | Pipeline fps | VP avail / fused / gate fired | VP yaw |err| mean / max | Result |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| s1_basic | 56.0 cm / 40.5 cm | +15.5 cm | 100% | 56/60 | 7.5 cm | 0.94 deg (3.41 deg) | 3.5 | 44 / 39 / 0 | 0.73 / 3.29 deg | PASS |
+| s23_blank_door | 46.6 cm / 32.6 cm | +14.0 cm | 100% | 56/60 | 5.5 cm | 0.74 deg (1.12 deg) | 4.3 | 50 / 45 / 0 | 0.61 / 2.31 deg | PASS |
+| s20_fast | 34.8 cm / 36.1 cm | -1.3 cm | 100% | 56/60 | 6.0 cm | 0.86 deg (3.37 deg) | 4.4 | 42 / 37 / 0 | 0.67 / 3.37 deg | PASS |
+| s4_dim | 34.3 cm / 36.3 cm | -2.0 cm | 100% | 56/60 | 4.2 cm | 0.67 deg (1.93 deg) | 4.1 | 37 / 32 / 0 | 0.54 / 3.33 deg | PASS |
+
+**The fusion does NOT help on a clean prior: joint error is worse
+on average (+6.6 cm; s1 +15.5, s23 +14.0) and the VIO yaw error is
+unchanged (0.67-0.94 deg vs 0.7-1.0 deg round-3).** The VIO's
+output yaw is vision-dominated, so a better prior yaw does not
+propagate — the fusion perturbs the PnP without improving it, and
+the joint-error change is VIO-path sensitivity, not a VP effect.
+The gate never fired (0/0/0/0): on a clean prior the VP yaw never
+disagrees with the prior by >= 10 deg, so the gate is a
+spurious-VP guard, not a bad-prior detector.
+
+#### Pass 3 — bad-prior rescue (prior offset yaw+2, pitch-1, roll+1)
+
+Same fusion, packets offset before buffering (the round-3
+fragility case). The VP yaw is computed from the frame, so it is
+unperturbed by the packet offset. Joint error vs the fragile
+baseline (60 cm budget):
+
+| Scenario | Joint, fusion / fragile baseline | Change | Detection | VIO valid | Drift mean | Yaw err mean (marker frames) | Pipeline fps | VP avail / fused / gate fired | Result |
+|---|---|---|---|---|---|---|---|---|---|
+| s1_basic | 60.2 cm / 80.0 cm | -19.8 cm | 100% | 56/60 | 20.3 cm | 1.49 deg (6.63 deg) | 4.5 | 43 / 38 / 0 | FAIL (by 0.2 cm) |
+| s23_blank_door | 36.5 cm / 93.9 cm | -57.4 cm | 100% | 56/60 | 12.7 cm | 0.63 deg (1.03 deg) | 4.4 | 48 / 43 / 0 | PASS |
+| s20_fast | 54.9 cm / 76.4 cm | -21.5 cm | 100% | 56/60 | 22.0 cm | 2.43 deg (10.86 deg) | 4.5 | 42 / 37 / 0 | PASS |
+| s4_dim | 47.6 cm / 79.8 cm | -32.2 cm | 100% | 56/60 | 7.4 cm | 1.44 deg (4.01 deg) | 4.1 | 43 / 38 / 0 | PASS |
+
+**The fusion DOES rescue a bad prior in 3 of 4 scenarios**
+(s23 93.9 -> 36.5, s20 76.4 -> 54.9, s4 79.8 -> 47.6 cm), but
+**s1 still fails at 60.2 cm — by 0.2 cm.** The VP yaw fixes yaw
+only; the pitch/roll offsets (-1 deg, +1 deg) still corrupt the
+1-DoF PnP (yaw error on marker frames 6.63 deg in s1, 10.86 deg in
+s20; drift 20-22 cm vs 4-8 cm on a clean prior). A yaw-only third
+measurement cannot fully rescue a three-axis prior error.
+
+#### Wiring decision: DO NOT wire the fusion into server/vio.py
+
+The continuous per-frame fusion is NOT wired in (no change to
+``server/vio.py``; the default pipeline is the round-3 yaw1dof
+PnP). It does not measure clearly better: on a clean prior it is
+worse on average (+6.6 cm joint error), and on a bad prior it
+rescues 3/4 but leaves s1 at budget. The VP yaw module
+(``server/vp_yaw.py``) and the test-script ``FusedPrior`` stay as
+separate, measured pieces: the VP yaw is a proven third yaw
+measurement (pass 1: unbiased, sigma 1.07 deg, 60-82% available)
+and a proven rescue (pass 3: 3/4 scenarios from FAIL to PASS).
+Cost if it were wired in: +59-64 ms/frame full-res (+36-39 ms
+half-res) on top of the VIO + detector; the pipeline fps figures
+above are not comparable with the round-3 fps (those runs had the
+depth-model voter on; these fusion runs did not).
+
+Recommended next step (UNMEASURED, needs its own test round): a
+slow bias tracker instead of per-frame fusion — average the
+(VP yaw - prior yaw) disagreement over ~30 frames and correct the
+prior yaw only when the persistent bias exceeds ~1.5 deg. That
+would leave a good prior alone (pass 2's failure mode) while
+correcting a systematically biased one (pass 3's success mode).
+A 2 deg prior bias cannot be told from 2 deg prior noise on a
+single frame, so per-frame fusion is the wrong shape for it.
+
+### Honest limits — calibration + third yaw (what this still does NOT prove)
+
+- The yaw gate (sigma <= 1.5 deg, |doorway bias| <= 1.5 deg) is
+  proven only on SYNTHETIC state packets. Whether a real Tello
+  magnetometer passes it is unknown — the §6.9 calibration must be
+  run on a real drone before the real test, and if it fails the
+  real test must not proceed.
+- The VP yaw is measured only on the synthetic room (crisp
+  rendered lines, high-contrast checker floor, posters). A real
+  room with plain walls, no skirting, or a featureless ceiling
+  may give lower availability — the module returns None then, and
+  the pipeline falls back to the prior, by design.
+- The VP yaw needs the magnetometer hint to resolve the 90 deg
+  X/Z ambiguity; without a hint there is no single yaw answer.
+  If the magnetometer itself is off by ~90 deg (e.g. magnetic
+  interference), the hint picks the wrong assignment — the 10 deg
+  gate does not protect against that, because the VP yaw would
+  then be ~90 deg from the prior and the gate would (correctly)
+  reject the VP, leaving the bad prior in place. The gate guards
+  a bad VP, not a bad hint.
+- The fusion passes were run with mono=None (no depth-model
+  voter), so their pipeline fps is not comparable with the
+  round-3 VIO fps (voter on). The VP's own cost is measured
+  separately (pass 1 ms/frame).
+- The s1 pass-3 result (60.2 cm) sits exactly on the budget; a
+  re-run on a different machine load could flip it either way.
+  It is reported as FAIL (60.2 > 60.0), not rounded into a pass.

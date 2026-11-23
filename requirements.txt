@@ -1,0 +1,15 @@
+# Wall-marker laptop server — virtual build.
+# Python 3.12, venv ~/workspace/tello-search/.venv/
+ultralytics>=8.3
+numpy>=1.23.0
+opencv-python>=4.7.0
+# Monocular depth model (third depth voter, server/mono_depth.py):
+# Depth Anything V2 Small via Hugging Face transformers. Weights are
+# ~95 MB (depth-anything/Depth-Anything-V2-Small-hf, Apache-2.0),
+# downloaded on first use into the HF cache under home. timm is the
+# ViT backbone the transformers implementation loads.
+transformers>=4.40
+timm>=0.9
+# Real-run only (NOT needed for --mode virtual; install only when a live
+# Tello run is approved):
+# djitellopy>=2.5

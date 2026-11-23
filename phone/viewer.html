@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Wall Marker — Phone Viewer</title>
+<!--
+  Wall Marker phone viewer.
+  Shows ONLY this phone's own camera feed with a pose-skeleton overlay
+  for a person hidden behind the wall. The phone NEVER receives any
+  remote video: the only data it gets from the server is compact
+  JSON marker data over Server-Sent Events (GET /api/markers).
+
+  Phone held still; pose comes from the bridge setup (see SPEC.md).
+  No orientation tracking in this build. No orientation-sensor events
+  are used anywhere in this file, and no XR APIs (Safari on iPhone
+  does not support them). Full 6-DoF phone tracking on iPhone would
+  need a native ARKit app — out of scope for this web viewer.
+
+  Camera model: the reference intrinsics are fx = fy = 1000, cx = 640,
+  cy = 360 for a 1280x720 frame. At runtime the intrinsics are scaled
+  to the camera stream's real dimensions (video.videoWidth /
+  video.videoHeight), so joints are projected in the stream's own
+  pixel space — the 1280x720 size is never assumed.
+
+  PROJECTION NOTE — image rows are top-origin (row 0 = top of the frame)
+  while world +Y is up, so the row is v = cy - fy*y/z (NOT fy*y/z + cy,
+  which mirrors the image vertically and turns the skeleton upside-down).
+  Verified: a 1.7 m person at 4 m projects nose (640, 335.5),
+  ankle (662.5, 713.75) in the 1280x720 reference frame.
+-->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: #000; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #fff; }
+  #stage { position: fixed; inset: 0; }
+  #cam {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: fill; /* stretched to exactly the stage box so the canvas overlay stays aligned with the projection */
+    background: #000;
+  }
+  #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #pill {
+    position: absolute; left: 12px; top: 12px;
+    background: rgba(0,0,0,.55); color: #fff;
+    font-size: 14px; font-weight: 600; padding: 7px 12px; border-radius: 999px;
+    pointer-events: none; max-width: calc(100% - 24px);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #pill .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #888; margin-right: 7px; vertical-align: 1px; }
+  #pill.green .dot { background: #39ff6a; }
+  #pill.amber .dot { background: #ffb020; }
+  #pill.red .dot { background: #ff5252; }
+  #centre {
+    position: absolute; left: 0; right: 0; top: 38%;
+    text-align: center; padding: 0 24px;
+    font-size: 28px; font-weight: 700; line-height: 1.35;
+    text-shadow: 0 2px 10px rgba(0,0,0,.9), 0 0 3px rgba(0,0,0,.9);
+    pointer-events: none;
+  }
+  #centre .sub { display: block; margin-top: 10px; font-size: 16px; font-weight: 400; color: #ddd; }
+  #centre.hidden { display: none; }
+  #centre.warn { color: #ffb020; }
+  #error {
+    position: absolute; left: 16px; right: 16px; top: 64px;
+    background: rgba(120, 0, 0, .88); color: #fff;
+    border: 1px solid #ff8080; border-radius: 12px;
+    padding: 16px; font-size: 16px; line-height: 1.5;
+    display: none; z-index: 5;
+  }
+  #error.show { display: block; }
+  #error b { display: block; font-size: 18px; margin-bottom: 6px; }
+  #error .note { margin-top: 10px; font-size: 14px; color: #ffd9d9; }
+  #bottom {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 0 16px 20px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  #distances { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .dist {
+    background: rgba(0,0,0,.62); color: #fff;
+    font-size: 36px; font-weight: 700; line-height: 1.2;
+    padding: 10px 22px; border-radius: 16px; text-align: center;
+    border: 2px solid rgba(255,255,255,.14);
+  }
+  .dist.stale { color: #ffb020; border-color: rgba(255,176,32,.55); }
+  #startStop {
+    height: 60px; border: none; border-radius: 16px;
+    background: #fff; color: #000;
+    font-size: 20px; font-weight: 700;
+    font-family: inherit; cursor: pointer;
+  }
+  #startStop:active { background: #ddd; }
+  #holdStill {
+    text-align: center; font-size: 15px; color: rgba(255,255,255,.85);
+    text-shadow: 0 1px 4px rgba(0,0,0,.9);
+  }
+  #holdStill.hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <!-- The ONE and only video element: this phone's own camera. -->
+  <video id="cam" autoplay muted playsinline></video>
+  <canvas id="overlay"></canvas>
+  <div id="pill"><span class="dot"></span><span id="pillText">Tap to start</span></div>
+  <div id="centre" class="hidden"><span id="centreMain"></span><span class="sub" id="centreSub"></span></div>
+  <div id="error" role="alert"></div>
+  <div id="bottom">
+    <div id="distances"></div>
+    <button id="startStop" type="button">Start</button>
+    <div id="holdStill">Hold still, facing the wall.</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------ */
+/* Camera model + fixed phone pose (SPEC.md)                           */
+/* ------------------------------------------------------------------ */
+// Reference intrinsics for a 1280x720 frame. K below is the working
+// copy, rescaled to the stream's real dimensions once the camera
+// starts (see updateCameraModel).
+var REF_K = { fx: 1000, fy: 1000, cx: 640, cy: 360, width: 1280, height: 720 };
+var K = { fx: 1000, fy: 1000, cx: 640, cy: 360, width: 1280, height: 720 };
+// Fixed phone pose: camera centre at (0, 1.5, 0), rotation identity,
+// looking +Z toward the wall. The phone is held still for the session;
+// its pose comes from the bridge setup, not from any sensor on the phone.
+var PHONE_POS = [0, 1.5, 0];
+
+/* COCO 17 joints, YOLO-Pose order (SPEC.md):
+   0 nose, 1 left_eye, 2 right_eye, 3 left_ear, 4 right_ear,
+   5 left_shoulder, 6 right_shoulder, 7 left_elbow, 8 right_elbow,
+   9 left_wrist, 10 right_wrist, 11 left_hip, 12 right_hip,
+   13 left_knee, 14 right_knee, 15 left_ankle, 16 right_ankle. */
+var COCO_EDGES = [
+  [0, 1], [0, 2], [1, 3], [2, 4],
+  [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
+  [5, 11], [6, 12], [11, 12],
+  [11, 13], [13, 15], [12, 14], [14, 16]
+];
+
+// One colour per person, nearest first. A stale marker is amber
+// regardless of its colour.
+var COLOR_FRESH = ['#39ff6a', '#4da3ff', '#ffffff'];
+var COLOR_STALE = '#ffb020';
+
+/* ------------------------------------------------------------------ */
+/* DOM                                                                  */
+/* ------------------------------------------------------------------ */
+var video = document.getElementById('cam');
+var canvas = document.getElementById('overlay');
+var ctx = canvas.getContext('2d');
+var pillEl = document.getElementById('pill');
+var pillTextEl = document.getElementById('pillText');
+var centreEl = document.getElementById('centre');
+var centreMainEl = document.getElementById('centreMain');
+var centreSubEl = document.getElementById('centreSub');
+var errorEl = document.getElementById('error');
+var distancesEl = document.getElementById('distances');
+var startStopBtn = document.getElementById('startStop');
+var holdStillEl = document.getElementById('holdStill');
+
+/* ------------------------------------------------------------------ */
+/* State                                                                */
+/* ------------------------------------------------------------------ */
+var running = false;      // Start tapped, not yet stopped
+var startedOnce = false;  // the hold-still line shows only before the first Start
+var streamOpen = false;
+var streamDead = false;   // watchdog fired: the stream has been silent > 7 s
+var bridgeLost = false;   // the last 'none' event said the bridge is invalid
+var cameraError = false;
+var markers = [];         // current markers, each with a receivedAt stamp
+var lastEventAt = 0;      // ms timestamp of the last SSE message of any kind
+var mediaStream = null;
+var es = null;
+
+/* ------------------------------------------------------------------ */
+/* Projection: world point -> phone image (stream pixel space)          */
+/* p_cam = P - PHONE_POS (R = identity); u = fx*x/z + cx,               */
+/* v = cy - fy*y/z (rows are top-origin; world +Y is up). Points with   */
+/* z <= 0 are behind the camera and project to nothing.                 */
+/* ------------------------------------------------------------------ */
+function projectPoint(p) {
+  if (!p || p.length < 3) return null;
+  var x = p[0], y = p[1], z = p[2];
+  if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return null;
+  var xc = x - PHONE_POS[0];
+  var yc = y - PHONE_POS[1];
+  var zc = z - PHONE_POS[2];
+  if (!(zc > 0)) return null; // behind the camera: nothing to draw
+  return [
+    K.fx * xc / zc + K.cx,
+    K.cy - K.fy * yc / zc
+  ];
+}
+
+// Scale the reference intrinsics to the stream's real dimensions, so
+// joints are projected in the stream's own pixel space.
+function updateCameraModel() {
+  var w = video.videoWidth || 0;
+  var h = video.videoHeight || 0;
+  if (w > 0 && h > 0) {
+    K = {
+      fx: REF_K.fx * w / REF_K.width,
+      fy: REF_K.fy * h / REF_K.height,
+      cx: w / 2,
+      cy: h / 2,
+      width: w,
+      height: h
+    };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Canvas sizing + drawing                                              */
+/* ------------------------------------------------------------------ */
+function resizeCanvas() {
+  var dpr = window.devicePixelRatio || 1;
+  var w = canvas.clientWidth || window.innerWidth;
+  var h = canvas.clientHeight || window.innerHeight;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  render();
+}
+
+function clearCanvas() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// The rounding follows the uncertainty: one decimal while sigma is
+// under 1 m, whole metres at 1 m and above. Never false precision.
+function formatDistance(d, sigma) {
+  if (sigma < 1) {
+    return '\u2248 ' + d.toFixed(1) + ' m \u00B1 ' + sigma.toFixed(1) + ' m';
+  }
+  return '\u2248 ' + Math.round(d) + ' m \u00B1 ' + Math.round(sigma) + ' m';
+}
+
+function renderDistances() {
+  distancesEl.innerHTML = '';
+  for (var i = 0; i < markers.length; i++) {
+    var mk = markers[i];
+    var pill = document.createElement('div');
+    pill.className = 'dist' + (mk.stale === true ? ' stale' : '');
+    pill.textContent = formatDistance(mk.distance_m, mk.uncertainty_m) +
+      (mk.stale === true ? ' \u00B7 STALE' : '');
+    distancesEl.appendChild(pill);
+  }
+}
+
+function strokeEdges(pts) {
+  ctx.beginPath();
+  for (var i = 0; i < COCO_EDGES.length; i++) {
+    var a = pts[COCO_EDGES[i][0]];
+    var b = pts[COCO_EDGES[i][1]];
+    if (!a || !b) continue; // joint behind camera / invalid: skip the edge
+    ctx.moveTo(a[0], a[1]);
+    ctx.lineTo(b[0], b[1]);
+  }
+  ctx.stroke();
+}
+
+function drawSkeleton(marker, index) {
+  var skel = marker.skeleton;
+  var stale = marker.stale === true;
+  var sigma = marker.uncertainty_m;
+  var color = stale ? COLOR_STALE : COLOR_FRESH[index % COLOR_FRESH.length];
+  // The drawing carries the uncertainty too: as sigma grows the
+  // skeleton fades and its lines thicken, so a faint skeleton never
+  // sits next to a confident-looking number.
+  var alpha = Math.max(0.5, Math.min(1, 1.2 - 0.4 * sigma));
+  var lw = 5 + Math.min(5, sigma * 3);
+  ctx.globalAlpha = alpha;
+
+  // Project every joint once.
+  var pts = [];
+  var i;
+  for (i = 0; i < 17; i++) pts.push(projectPoint(skel[i]));
+
+  // Edges as lines, over a dark under-stroke so they stay readable
+  // on any wall.
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+  ctx.lineWidth = lw + 4;
+  strokeEdges(pts);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  strokeEdges(pts);
+
+  // Joints as small circles (part of the skeleton — never a lone dot).
+  ctx.fillStyle = color;
+  for (i = 0; i < 17; i++) {
+    if (!pts[i]) continue;
+    ctx.beginPath();
+    ctx.arc(pts[i][0], pts[i][1], 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function render() {
+  clearCanvas();
+  renderDistances();
+  if (!markers.length) return;
+  // Work in the stream's pixel space; scale to the real canvas pixels.
+  var sx = canvas.width / K.width;
+  var sy = canvas.height / K.height;
+  ctx.setTransform(sx, 0, 0, sy, 0, 0);
+  for (var m = 0; m < markers.length; m++) {
+    drawSkeleton(markers[m], m);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Status pill + centre line                                            */
+/* ------------------------------------------------------------------ */
+function setPill(kind, text) {
+  pillEl.className = kind; // 'green' | 'amber' | 'grey' | 'red'
+  pillTextEl.textContent = text;
+}
+
+function setCentre(main, sub, warn) {
+  if (!main) {
+    centreEl.classList.add('hidden');
+    return;
+  }
+  centreEl.classList.remove('hidden');
+  centreEl.classList.toggle('warn', !!warn);
+  centreMainEl.textContent = main;
+  centreSubEl.textContent = sub || '';
+  centreSubEl.style.display = sub ? 'block' : 'none';
+}
+
+function updateUI() {
+  if (!running) {
+    setPill('grey', 'Tap to start');
+    setCentre(null);
+    return;
+  }
+  if (cameraError) {
+    setPill('red', 'No camera');
+    setCentre(null);
+    return;
+  }
+  if (streamDead) {
+    setPill('red', 'No connection');
+    setCentre('No connection', 'Reconnecting\u2026', false);
+    return;
+  }
+  if (!streamOpen) {
+    setPill('grey', 'Connecting\u2026');
+    setCentre(null);
+    return;
+  }
+  if (markers.length) {
+    var allStale = true;
+    var droneCount = 0;
+    for (var i = 0; i < markers.length; i++) {
+      if (markers[i].stale !== true) allStale = false;
+      if (Array.isArray(markers[i].drones) && markers[i].drones.length > droneCount) {
+        droneCount = markers[i].drones.length;
+      }
+    }
+    var label = markers.length > 1 ? markers.length + ' people found' : 'Person found';
+    if (droneCount > 1) label += ' \u00B7 ' + droneCount + ' drones';
+    setPill(allStale ? 'amber' : 'green', allStale ? 'Stale' : label);
+    setCentre(null);
+    return;
+  }
+  if (bridgeLost) {
+    setPill('amber', 'Tracking lost');
+    setCentre('Tracking lost', 'Marker hidden until tracking returns.', true);
+    return;
+  }
+  // Watching with nobody there: the empty camera is the message.
+  // Nothing is written across the middle of the screen.
+  setPill('grey', 'Watching');
+  setCentre(null);
+}
+
+function showCameraError() {
+  errorEl.innerHTML = '';
+  var title = document.createElement('b');
+  title.textContent = 'Camera unavailable.';
+  var body = document.createElement('div');
+  body.textContent = 'Allow camera access for this page in Safari settings and reload.';
+  var note = document.createElement('div');
+  note.className = 'note';
+  note.textContent = 'On a LAN address this page needs HTTPS.';
+  errorEl.appendChild(title);
+  errorEl.appendChild(body);
+  errorEl.appendChild(note);
+  errorEl.classList.add('show');
+  cameraError = true;
+  updateUI();
+}
+
+/* ------------------------------------------------------------------ */
+/* Marker stream (SSE) — JSON only, never video                         */
+/* ------------------------------------------------------------------ */
+// A marker is drawn only with a skeleton AND a distance: if either is
+// missing, the marker is dropped entirely.
+function validMarker(m) {
+  if (!m || typeof m !== 'object') return null;
+  if (!Array.isArray(m.skeleton) || m.skeleton.length < 17) return null;
+  if (!isFinite(m.distance_m) || !isFinite(m.uncertainty_m)) return null;
+  return {
+    skeleton: m.skeleton,
+    distance_m: m.distance_m,
+    uncertainty_m: m.uncertainty_m,
+    stale: m.stale === true,
+    drones: Array.isArray(m.drones) ? m.drones : [],
+    receivedAt: Date.now()
+  };
+}
+
+var es = null;
+
+function handleMarkerEvent(raw) {
+  var data;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    return; // ignore malformed lines; the stream stays up
+  }
+  lastEventAt = Date.now();
+  streamDead = false;
+  if (!data || typeof data !== 'object') return;
+
+  if (data.type === 'marker') {
+    var one = validMarker(data);
+    markers = one ? [one] : [];
+    bridgeLost = false;
+    render();
+    updateUI();
+    return;
+  }
+
+  if (data.type === 'markers') {
+    var list = [];
+    if (Array.isArray(data.markers)) {
+      for (var i = 0; i < data.markers.length; i++) {
+        var vm = validMarker(data.markers[i]);
+        if (vm) list.push(vm);
+      }
+    }
+    // Nearest first, at most 3.
+    list.sort(function (a, b) { return a.distance_m - b.distance_m; });
+    markers = list.slice(0, 3);
+    bridgeLost = false;
+    render();
+    updateUI();
+    return;
+  }
+
+  if (data.type === 'none') {
+    // No marker right now. The bridge being invalid means the shared
+    // frame is gone: the marker is hidden, never guessed.
+    markers = [];
+    bridgeLost = data.bridge_valid === false ||
+      data.reason === 'tracking_lost' ||
+      data.reason === 'bridge_lost' ||
+      data.reason === 'bridge_invalid';
+    render();
+    updateUI();
+    return;
+  }
+  // Unknown event type: ignore.
+}
+
+function connectStream() {
+  if (es) { try { es.close(); } catch (e) {} }
+  es = new EventSource('/api/markers');
+  es.onopen = function () {
+    streamOpen = true;
+    streamDead = false;
+    lastEventAt = Date.now();
+    updateUI();
+  };
+  es.onmessage = function (ev) {
+    handleMarkerEvent(ev.data);
+  };
+  // EventSource reconnects automatically on error; we only update the
+  // status so the user sees the stream is down instead of stale data.
+  es.onerror = function () {
+    streamOpen = false;
+    updateUI();
+  };
+}
+
+// Stale markers are held for at most 0.5 s, then hidden. Fresh
+// markers are left alone here — they are refreshed by the stream and
+// cleared by a 'none' event or by the watchdog below.
+setInterval(function () {
+  if (!markers.length) return;
+  var now = Date.now();
+  var kept = [];
+  for (var i = 0; i < markers.length; i++) {
+    var mk = markers[i];
+    if (mk.stale === true && now - mk.receivedAt > 500) continue;
+    kept.push(mk);
+  }
+  if (kept.length !== markers.length) {
+    markers = kept;
+    render();
+    updateUI();
+  }
+}, 100);
+
+// Watchdog: if the stream goes silent (no message of any kind), stop
+// trusting the last marker. The server sends marker/none events at 2 Hz
+// plus a heartbeat, so 7 s of silence means the stream is dead.
+setInterval(function () {
+  if (!running || !lastEventAt || streamDead) return;
+  if (Date.now() - lastEventAt > 7000) {
+    streamDead = true;
+    markers = [];
+    clearCanvas();
+    renderDistances();
+    updateUI();
+  }
+}, 1000);
+
+/* ------------------------------------------------------------------ */
+/* Camera (local only)                                                  */
+/* ------------------------------------------------------------------ */
+function startCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showCameraError();
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+    .then(function (stream) {
+      mediaStream = stream;
+      video.srcObject = stream;
+      cameraError = false;
+      errorEl.classList.remove('show');
+      video.addEventListener('loadedmetadata', function () {
+        updateCameraModel();
+        resizeCanvas();
+      });
+      return video.play();
+    })
+    .then(function () {
+      updateCameraModel();
+      resizeCanvas();
+      updateUI();
+    })
+    .catch(function () {
+      showCameraError();
+    });
+}
+
+/* ------------------------------------------------------------------ */
+/* Start / Stop — the only control                                      */
+/* ------------------------------------------------------------------ */
+function startAll() {
+  running = true;
+  startedOnce = true;
+  holdStillEl.classList.add('hidden'); // the line shows only on the first run
+  cameraError = false;
+  errorEl.classList.remove('show');
+  startStopBtn.textContent = 'Stop';
+  updateUI();
+  startCamera();
+  connectStream();
+}
+
+function stopAll() {
+  running = false;
+  if (es) { try { es.close(); } catch (e) {} es = null; }
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} });
+    mediaStream = null;
+  }
+  video.srcObject = null;
+  streamOpen = false;
+  streamDead = false;
+  bridgeLost = false;
+  markers = [];
+  lastEventAt = 0;
+  clearCanvas();
+  renderDistances();
+  errorEl.classList.remove('show');
+  startStopBtn.textContent = 'Start';
+  updateUI();
+}
+
+startStopBtn.addEventListener('click', function () {
+  if (running) stopAll(); else startAll();
+});
+
+/* ------------------------------------------------------------------ */
+/* Boot — no auto-start: nothing runs until Start is tapped             */
+/* ------------------------------------------------------------------ */
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', function () {
+  setTimeout(resizeCanvas, 300);
+});
+resizeCanvas();
+updateUI();
+</script>
+</body>
+</html>
