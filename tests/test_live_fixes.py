@@ -33,6 +33,10 @@ What each test proves:
   stream (streamoff + streamon + fresh reader) and the next read
   serves a fresh frame; after 3 failed restarts the source stays
   dead, returns None, and the log names the Tello app.
+* Key map (BUG 4, 2026-11-25, the user's own choice): Q or T takes
+  off, E lands, L turns right (L is deliberately NOT land any more),
+  J turns left; the W/S/A/D/I/K moves are unchanged; an unknown key
+  sends nothing.
 """
 
 from __future__ import annotations
@@ -48,7 +52,7 @@ WALL_MARKER_DIR = Path(__file__).resolve().parent.parent
 if str(WALL_MARKER_DIR) not in sys.path:
     sys.path.insert(0, str(WALL_MARKER_DIR))
 
-from server.main import Pipeline, SafeFlightController, live_pose_step  # noqa: E402
+from server.main import Pipeline, SafeFlightController, dispatch_drone_key, live_pose_step  # noqa: E402
 from server.video_source import TelloVideoSource  # noqa: E402
 from server.vio import MonocularVO  # noqa: E402
 
@@ -616,6 +620,90 @@ def test_video_restart_cap_gives_up():
     print("PASS video_restart_cap_gives_up")
 
 
+# ---------------------------------------------------------------------------
+# Key map (BUG 4, 2026-11-25): Q/T takeoff, E land, L turn right
+# ---------------------------------------------------------------------------
+
+def _key_controller():
+    fake = FakeTello()
+    return fake, SafeFlightController(fake)
+
+
+def _takeoff(ctrl, fake):
+    dispatch_drone_key(ord("t"), ctrl)
+    assert wait_until(lambda: ctrl.status == "HOVERING", timeout=3.0), \
+        f"takeoff did not reach HOVERING: {ctrl.status}"
+    assert wait_idle(ctrl)
+    assert fake.names() == ["takeoff"]
+
+
+def test_key_q_is_takeoff():
+    """Q takes off now (it used to close the camera window — the
+    'program went off' the user saw was only the window hiding)."""
+    fake, ctrl = _key_controller()
+    assert dispatch_drone_key(ord("q"), ctrl) is True
+    assert wait_until(lambda: ctrl.status == "HOVERING", timeout=3.0)
+    assert wait_idle(ctrl)
+    assert fake.names() == ["takeoff"]
+    print("PASS key_q_is_takeoff")
+
+
+def test_key_t_still_takeoff():
+    fake, ctrl = _key_controller()
+    assert dispatch_drone_key(ord("t"), ctrl) is True
+    assert wait_until(lambda: ctrl.status == "HOVERING", timeout=3.0)
+    assert wait_idle(ctrl)
+    assert fake.names() == ["takeoff"]
+    print("PASS key_t_still_takeoff")
+
+
+def test_key_e_is_land_and_l_is_not():
+    """E lands; L no longer lands — after takeoff L turns right."""
+    fake, ctrl = _key_controller()
+    _takeoff(ctrl, fake)
+    assert dispatch_drone_key(ord("e"), ctrl) is True
+    assert wait_until(lambda: ctrl.status == "LANDED", timeout=3.0)
+    assert wait_idle(ctrl)
+    assert fake.names() == ["takeoff", "land"], f"calls: {fake.names()}"
+    # Fresh takeoff, then L must turn (not land).
+    fake2, ctrl2 = _key_controller()
+    _takeoff(ctrl2, fake2)
+    assert dispatch_drone_key(ord("l"), ctrl2) is True
+    assert wait_until(lambda: ("rotate_clockwise", (30,)) in fake2.calls,
+                      timeout=3.0)
+    assert wait_idle(ctrl2)
+    assert "land" not in fake2.names(), f"L landed the drone: {fake2.names()}"
+    print("PASS key_e_is_land_and_l_is_not")
+
+
+def test_key_j_turns_left_and_moves():
+    """J turns left; the W/S/A/D/I/K moves are unchanged."""
+    fake, ctrl = _key_controller()
+    _takeoff(ctrl, fake)
+    assert dispatch_drone_key(ord("j"), ctrl) is True
+    assert wait_until(lambda: ("rotate_counter_clockwise", (30,)) in fake.calls,
+                      timeout=3.0)
+    assert wait_idle(ctrl)
+    for key, name in ((ord("w"), "move_forward"), (ord("s"), "move_back"),
+                      (ord("a"), "move_left"), (ord("d"), "move_right"),
+                      (ord("i"), "move_up"), (ord("k"), "move_down")):
+        assert dispatch_drone_key(key, ctrl) is True
+        assert wait_until(lambda n=name: (n, (30,)) in fake.calls,
+                          timeout=3.0), \
+            f"{name} not sent for key {chr(key)}"
+        assert wait_idle(ctrl)
+    print("PASS key_j_turns_left_and_moves")
+
+
+def test_key_unknown_does_nothing():
+    fake, ctrl = _key_controller()
+    assert dispatch_drone_key(ord("z"), ctrl) is False
+    assert dispatch_drone_key(255, ctrl) is False  # waitKey: no key pressed
+    time.sleep(0.2)
+    assert fake.names() == []
+    print("PASS key_unknown_does_nothing")
+
+
 def main():
     tests = [
         test_takeoff_not_joystick_blocks_moves,
@@ -634,6 +722,11 @@ def main():
         test_video_frozen_frame_restarts_once,
         test_video_stopped_flag_restarts,
         test_video_restart_cap_gives_up,
+        test_key_q_is_takeoff,
+        test_key_t_still_takeoff,
+        test_key_e_is_land_and_l_is_not,
+        test_key_j_turns_left_and_moves,
+        test_key_unknown_does_nothing,
     ]
     failed = 0
     for fn in tests:

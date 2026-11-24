@@ -1646,3 +1646,19 @@ ONE flight controller now, theirs, reviewed on its merits and kept.
   further stream calls happen and the log names the Tello app.
   Full 27-scenario suite not re-run: live-path only, the suite
   uses SyntheticSource/FileVideoSource, not TelloVideoSource.
+
+### Key remap from the 2026-11-25 live run (same night, ~02:45)
+
+- What the user saw: pressing Q made "the program go off". Q only
+  hid the camera window by design (the server kept running) — it
+  never crashed or exited the program. Keys are now the user's own
+  map: Q or T takeoff, E land, L turn right (L is deliberately NOT
+  land any more — an accidental L press mid-flight used to drop the
+  drone), J turn left; W/S/A/D/I/K moves unchanged. The key dispatch
+  is now a tested function (`dispatch_drone_key` in `server/main.py`);
+  the camera window is closed with its X button, and Ctrl+C in the
+  console is the full exit and lands the drone.
+- `tests/test_live_fixes.py` extended to 21 tests, all PASS
+  (2026-11-25): Q and T take off, E lands, L turns right and never
+  lands, J turns left, all six moves unchanged, unknown keys send
+  nothing.

@@ -811,6 +811,46 @@ def live_pose_step(vio, frame, start_pose, t):
     return vio, start_pose, False
 
 
+def dispatch_drone_key(key, flight_ctrl):
+    """Map one keyboard key to a flight command. Returns True if the key
+    was a flight key, False otherwise (unknown key / no key / no drone).
+
+    Key map (2026-11-25, the user's own choice): Q or T takeoff, E land,
+    L turn right, J turn left. L is deliberately NOT land any more: an
+    accidental L press mid-flight used to drop the drone. Q used to
+    close the camera window — which only hid it (the program never
+    crashed; the window went away and keys stopped working). Closing
+    the window is now done with its X button (the caller watches for
+    it); Ctrl+C in the console is the full exit and lands the drone.
+    """
+    tello = getattr(flight_ctrl, "tello", None)
+    if tello is None:
+        return False
+    if key in (ord("q"), ord("t")):  # Takeoff
+        flight_ctrl.send_command("takeoff", tello.takeoff)
+    elif key == ord("e"):  # Land
+        flight_ctrl.send_command("land", tello.land)
+    elif key in (ord("w"), 82):  # W / Forward
+        flight_ctrl.send_command("forward 30", tello.move_forward, 30)
+    elif key in (ord("s"), 84):  # S / Back
+        flight_ctrl.send_command("back 30", tello.move_back, 30)
+    elif key in (ord("a"), 81):  # A / Left
+        flight_ctrl.send_command("left 30", tello.move_left, 30)
+    elif key in (ord("d"), 83):  # D / Right
+        flight_ctrl.send_command("right 30", tello.move_right, 30)
+    elif key == ord("i"):  # Up
+        flight_ctrl.send_command("up 30", tello.move_up, 30)
+    elif key == ord("k"):  # Down
+        flight_ctrl.send_command("down 30", tello.move_down, 30)
+    elif key == ord("j"):  # Rotate Left
+        flight_ctrl.send_command("turn_left 30", tello.rotate_counter_clockwise, 30)
+    elif key == ord("l"):  # Rotate Right
+        flight_ctrl.send_command("turn_right 30", tello.rotate_clockwise, 30)
+    else:
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # CLI — product server: live drone frames only
 # ---------------------------------------------------------------------------
@@ -958,34 +998,23 @@ def main(argv=None):
 
                     # HUD Bottom Bar: Key prompt
                     cv2.rectangle(vis, (0, vis.shape[0] - 28), (vis.shape[1], vis.shape[0]), (20, 20, 20), -1)
-                    cv2.putText(vis, "[T] Takeoff  [L] Land  [W/S/A/D] Move 30cm  [I/K] Up/Down  [J/E] Turn",
+                    cv2.putText(vis, "[T/Q] Takeoff  [E] Land  [W/S/A/D] Move 30cm  [I/K] Up/Down  [J/L] Turn",
                                 (10, vis.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (230, 230, 230), 1)
 
                     cv2.imshow("Tello Drone Camera (Live Detection View)", vis)
                     key = cv2.waitKey(1) & 0xFF
-                    if key == ord('q'):
-                        show_drone_window = False
-                        cv2.destroyAllWindows()
-                    elif key == ord('t'):
-                        flight_ctrl.send_command("takeoff", flight_ctrl.tello.takeoff)
-                    elif key == ord('l'):
-                        flight_ctrl.send_command("land", flight_ctrl.tello.land)
-                    elif key in (ord('w'), 82):  # W / Forward
-                        flight_ctrl.send_command("forward 30", flight_ctrl.tello.move_forward, 30)
-                    elif key in (ord('s'), 84):  # S / Back
-                        flight_ctrl.send_command("back 30", flight_ctrl.tello.move_back, 30)
-                    elif key in (ord('a'), 81):  # A / Left
-                        flight_ctrl.send_command("left 30", flight_ctrl.tello.move_left, 30)
-                    elif key in (ord('d'), 83):  # D / Right
-                        flight_ctrl.send_command("right 30", flight_ctrl.tello.move_right, 30)
-                    elif key == ord('i'):  # Up
-                        flight_ctrl.send_command("up 30", flight_ctrl.tello.move_up, 30)
-                    elif key == ord('k'):  # Down
-                        flight_ctrl.send_command("down 30", flight_ctrl.tello.move_down, 30)
-                    elif key == ord('j'):  # Rotate Left
-                        flight_ctrl.send_command("turn_left 30", flight_ctrl.tello.rotate_counter_clockwise, 30)
-                    elif key == ord('e'):  # Rotate Right
-                        flight_ctrl.send_command("turn_right 30", flight_ctrl.tello.rotate_clockwise, 30)
+                    dispatch_drone_key(key, flight_ctrl)
+                    # Closing the window with its X button hides it (the
+                    # old Q key did this; Q is takeoff now, 2026-11-25).
+                    # The server keeps running either way.
+                    try:
+                        if cv2.getWindowProperty(
+                                "Tello Drone Camera (Live Detection View)",
+                                cv2.WND_PROP_VISIBLE) < 1:
+                            show_drone_window = False
+                            cv2.destroyAllWindows()
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 

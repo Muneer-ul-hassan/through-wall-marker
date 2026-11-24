@@ -587,3 +587,10 @@ tools/make_cert.sh  self-signed cert for iPhone HTTPS on LAN
   honestly dead and returns None, with the log naming the Tello
   app as the likely cause. `tests/test_live_fixes.py` extended to
   16 tests, all PASS.
+- Key remap from the 2026-11-25 live run: Q used to close the camera
+  window (the user read that as the program crashing — it only hid
+  the window). Keys are now the user's own map: Q or T takeoff, E
+  land, L turn right (L is deliberately NOT land any more), J turn
+  left; W/S/A/D/I/K unchanged. Dispatch is a tested function
+  (`dispatch_drone_key`); the window closes with its X button.
+  `tests/test_live_fixes.py` extended to 21 tests, all PASS.
