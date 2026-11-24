@@ -1947,6 +1947,66 @@ case at 720p if the writer stalls completely).
 
 `~/workspace/tello-search/.venv/bin/python -m pytest tests/test_live_fixes.py tests/test_doorway.py tests/test_autopilot.py tests/test_relocalisation.py tests/test_recorder.py tests/test_wiring.py -q` -> **101 passed** (32 + 9 + 25 + 10 + 9 + 16). Full 27-scenario virtual suite not re-run: live-path only. Nothing pushed yet.
 
+### Tracker-robustness fix (BUG 7, 2026-11-25, from the 04:31 live run)
+
+The 04:31 run proved the user right: the tracker kept dying. Bridge
+valid twice, then two `pnp-failed` losses, map 482 -> 15 -> 0.
+Root cause (measured on the synthetic room, not guessed) — two bugs
+in `server/vio.py` `_track`, plus a missing fallback:
+* **Anchor drain (the big one):** the relocalisation anchor
+  (`_good_*`) was overwritten on EVERY accepted frame, including
+  attitude-aided (rotation-only) frames that carry ZERO 3D points.
+  Measured: one 30-deg turn dropped the anchor from 130 3D points
+  to 0 in 3 frames, and once the anchor has 0 3D points
+  `_try_relocalise` can never recover (it needs >= 12). Fix: only a
+  vision-PnP frame may become the anchor.
+* **Prune mass-kill:** the 3-px reprojection prune ran against every
+  accepted pose, including rotation-only poses whose translation is
+  a motion-model PREDICTION. Measured: during a 30-deg turn the
+  prune deleted 27 of 57 surviving map points in one frame and all
+  8 remaining 3D points in the next. Fix: prune only on vision-PnP
+  poses (the points are re-checked on the next vision frame).
+* **No ORB second chance:** `_try_relocalise` returned False the
+  moment the LK anchor was too thin (or LK itself failed) without
+  ever consulting the keyframe ORB database, which survives
+  independently of the live anchor. Fix: fall through to
+  `_orb_recover` (new `_try_orb_relocalise` helper, same PnP +
+  height acceptance) in both cases.
+* **Scan turns 15 deg (`server/autopilot.py`):** blind-scan turns
+  (SCAN / SEARCH) are 15 deg, not 30 — measured, a 30-deg turn drops
+  the map to 0 in 3 frames, while 15-deg turns keep vision PnP alive
+  for ~48 deg of yaw (vs ~12 deg). `scan_turns` 12 -> 24 so a full
+  SCAN still covers 360 deg. Targeted correction turns (AIM / TRACK)
+  and manual keys stay 30 deg.
+* **Recovery threshold NOT lowered:** the live relocalisation
+  succeeded at 20 inliers, and the 04:32:38 loss had 13 inliers
+  (which passes the 12-point thin tier) — no measured case shows a
+  correct pose refused by the gate, so the gate stays.
+* **Measured after the fix (synthetic room):** 30-deg turns —
+  anchor survives at 13 3D points (was 0), prune 0 on every
+  attitude-aided frame; 15-deg turns — vision alive at 45 deg yaw
+  (n_map 33), anchor 15. Tracking still dies after ~115 deg of
+  sustained yaw (LK limit — features leave the frame); a real room
+  with 360 deg of texture behaves differently, and the autopilot
+  pauses between turns.
+* **U is start-only (user's order, same change):** `server/main.py`
+  `dispatch_drone_key` — pressing U while the autopilot runs does
+  NOTHING (one throttled log line, 5 s) instead of stopping it; the
+  old toggle-off made him kill the autopilot right after starting
+  it by pressing U again. Stopping is unchanged: any manual key or
+  the operator Stop. `docs/AUTONOMOUS_MODE.md` and `README.md`
+  updated (U = start only).
+* **Tests:** new `tests/test_tracker_robustness.py` (5 tests: anchor
+  survives, prune skipped on attitude-aided frames, 15-deg turns
+  keep vision longer, relocalise after turn + loss, ORB recovery on
+  a thin anchor) + 1 new autopilot test (scan/search 15 deg,
+  corrections 30 deg) + 1 new wiring test (manual key still takes
+  over after a U start; the old toggle test replaced by a
+  start-only test). Verified the 4 vio-dependent tests FAIL with
+  the fixes reverted (temporary revert script, file restored and
+  verified intact) — they are real regression tests, not vacuous.
+* **Measured verification (2026-11-25):** `~/workspace/tello-search/.venv/bin/python -m pytest tests/test_live_fixes.py tests/test_doorway.py tests/test_autopilot.py tests/test_relocalisation.py tests/test_recorder.py tests/test_wiring.py tests/test_tracker_robustness.py -q` -> **108 passed** (101 existing + 7 new). Full 27-scenario virtual suite not re-run: live-path only. **NOT live-verified: no flight has flown this fix yet — the live run is the proof, not the tests.** Nothing pushed yet.
+
 ### Gating dependency (stated plainly)
 
 The command path is the gating dependency: the autopilot cannot fly

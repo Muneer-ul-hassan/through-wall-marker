@@ -21,7 +21,14 @@ or ``server.doorway``. The move functions are resolved, in order, from:
    ``.tello`` attribute is the djitellopy Tello, and ``dispatch_drone_key``
    in ``server/main.py`` passes exactly these methods to ``send_command``).
 
-Move step is 20 cm for every forward/sideways move; turns are 30 deg.
+Move step is 20 cm for every forward/sideways move. Blind-scan turns
+(SCAN / SEARCH) are 15 deg: a 30-deg turn sheds LK bearings faster
+than the map can be rebuilt — measured on the synthetic room, one
+30-deg turn dropped the 3D map from 144 points to 0 in 3 frames,
+and the 04:31 live run's map collapsed 482 -> 15 -> 0 the same way
+(2026-11-25 tracker fix). Targeted correction turns (AIM re-centre,
+TRACK edge) and manual keys stay 30 deg: they are single corrections,
+not a sustained spin, so the map survives them.
 
 Safety layer (hard rules, no exceptions):
 * Tracking lost (``ctx.tracking_valid`` False) during autonomous flight
@@ -117,19 +124,25 @@ class Autopilot:
     """
 
     def __init__(self, controller, mover: Optional[dict] = None,
-                 turn_deg: int = 30, step_cm: int = 20,
+                 turn_deg: int = 30, scan_turn_deg: int = 15,
+                 step_cm: int = 20,
                  centre_tol_px: float = 60,
                  frame_width_px: int = FRAME_WIDTH_PX,
                  doorway_close_width_px: float = 400,
                  max_approach_steps: int = 10, pass_steps: int = 3,
                  turn_pause_ticks: int = 3, move_pause_ticks: int = 2,
-                 scan_turns: int = 12, battery_min_pct: float = 25,
+                 scan_turns: int = 24, battery_min_pct: float = 25,
                  person_edge_px: float = 120,
                  doorway_min_confidence: float = 0.5):
         self.controller = controller
         self._mover = dict(mover) if mover else {}
         # Tunables.
         self.turn_deg = int(turn_deg)
+        # Blind-scan turns (SCAN / SEARCH): 15 deg, not 30 — see the
+        # module docstring (2026-11-25 tracker fix). Correction
+        # turns (AIM / TRACK) use turn_deg (30). scan_turns is 24
+        # so a full SCAN still covers 360 deg (24 x 15).
+        self.scan_turn_deg = int(scan_turn_deg)
         self.step_cm = int(step_cm)
         self.centre_tol_px = float(centre_tol_px)
         self.frame_width_px = int(frame_width_px)
@@ -147,8 +160,8 @@ class Autopilot:
         self.message: str = "autopilot off"
         self._pre_hold: Optional[str] = None
         self._pause: int = 0          # ticks left before the next command
-        self._scan_turns: int = 0     # 30-deg turns issued in this SCAN
-        self._search_turns: int = 0   # 30-deg turns issued in this SEARCH
+        self._scan_turns: int = 0    # 15-deg turns issued in this SCAN
+        self._search_turns: int = 0  # 15-deg turns issued in this SEARCH
         self._approach_steps: int = 0  # forward steps issued in APPROACH
         self._pass_count: int = 0     # forward steps issued in PASS
         self._land_issued: bool = False
@@ -260,10 +273,14 @@ class Autopilot:
             return
         if not self._ready():
             return
-        # Yaw in 30-deg steps, pausing between turns so the tracker and
-        # the detector can keep up. Rotation gives no parallax, so no
-        # sideways drift is needed here — looking around is the job.
-        if self._issue("turn_right 30", "cw", self.turn_deg):
+        # Yaw in 15-deg steps (2026-11-25 tracker fix), pausing
+        # between turns so the tracker and the detector can keep up.
+        # Rotation gives no parallax, so no sideways drift is needed
+        # here — looking around is the job. 30-deg turns shed the
+        # VIO map to 0 in one turn, so the scan itself killed
+        # tracking; 24 x 15 deg still covers a full circle.
+        if self._issue(f"turn_right {self.scan_turn_deg}", "cw",
+                       self.scan_turn_deg):
             self._scan_turns += 1
             self._pause = self.turn_pause_ticks
             self.message = "scanning for doorway"
@@ -333,7 +350,11 @@ class Autopilot:
             return
         if not self._ready():
             return
-        if self._issue("turn_right 30", "cw", self.turn_deg):
+        # 15-deg steps here too (2026-11-25 tracker fix): SEARCH is
+        # the same blind spin as SCAN, so 30-deg turns would drain
+        # the VIO map the same way.
+        if self._issue(f"turn_right {self.scan_turn_deg}", "cw",
+                       self.scan_turn_deg):
             self._search_turns += 1
             self._pause = self.turn_pause_ticks
             self.message = "searching for person"

@@ -620,10 +620,11 @@ tools/make_cert.sh  self-signed cert for iPhone HTTPS on LAN
 
 ## Autonomous mode (2026-11-25, Tello only, laptop CPU only)
 
-The drone flies itself — no bigger drone. Press **U** to toggle auto mode
-(the key is shown in the HUD: `[U] Auto`). The autopilot is a state
-machine in `server/autopilot.py`: SCAN (yaw in 30 deg steps, looking for
-a doorway) -> AIM (centre the doorway) -> APPROACH (20 cm forward steps)
+The drone flies itself — no bigger drone. Press **U** to start auto mode
+(start-only — pressing U again does nothing; stop with any manual key or
+the operator Stop button). The autopilot is a state machine in
+`server/autopilot.py`: SCAN (yaw in 15 deg steps, looking for a doorway)
+-> AIM (centre the doorway) -> APPROACH (20 cm forward steps)
 -> PASS (3 x 20 cm steps through the doorway) -> SEARCH (yaw scan for
 the person in the other room) -> TRACK (hover, keep the person centred,
 marker stays live). Doorway detection is OpenCV only

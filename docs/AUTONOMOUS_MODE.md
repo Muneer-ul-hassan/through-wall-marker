@@ -10,11 +10,15 @@ next room so the phone can show the marker.
   then press **U**. Auto mode only starts if the drone is hovering
   AND tracking is valid (the camera can see the room well enough to
   track). If either is missing, U does nothing and the log says why.
-- **Stop:** press **U** again, or press the **Stop autopilot** button
-  on the laptop operator page (`/operator`), or press **any manual
-  key** — W / S / A / D / I / K / J / L / Q / T / E. A manual key
-  always takes over: it stops auto mode first, then flies the drone
-  yourself. The human always wins.
+- **U is start-only (2026-11-25, user's order):** pressing **U**
+  while auto mode is already running does NOTHING — it does not stop
+  it. (The old toggle-off made him kill the autopilot right after
+  starting it by pressing U again.) There is no stop key.
+- **Stop:** press the **Stop autopilot** button on the laptop
+  operator page (`/operator`), or press **any manual key** — W / S /
+  A / D / I / K / J / L / Q / T / E. A manual key always takes over:
+  it stops auto mode first, then flies the drone yourself. The human
+  always wins.
 - **Land:** **E** lands (and stops auto mode first, like any manual key).
 
 ## What each state means

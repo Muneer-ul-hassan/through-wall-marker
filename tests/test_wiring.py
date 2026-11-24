@@ -10,11 +10,14 @@ local ephemeral port. NOT wired into tests/run_tests.py (that runner
 is the 27-scenario virtual suite; these are live-path unit tests).
 
 What each test proves:
-* U key toggles the autopilot (start WITH the current ctx, so the
-  start gate enforces HOVERING + tracking_valid; refused otherwise),
-  and U with no autopilot wired does nothing.
+* U key STARTS the autopilot (start-only, 2026-11-25 user's order:
+  a second U while it runs does NOTHING — the old toggle-off made
+  him kill the autopilot right after starting it by pressing U
+  again), start WITH the current ctx, so the start gate enforces
+  HOVERING + tracking_valid; refused otherwise, and U with no
+  autopilot wired does nothing.
 * Any manual key stops a running autopilot FIRST, then runs the
-  manual command (manual takeover).
+  manual command (manual takeover) — including after a U start.
 * 20 cm steps: dispatch sends "forward 20" / move_forward(20);
   turns stay 30 deg.
 * Not-joystick: SafeFlightController.last_reject is "not-joystick"
@@ -183,20 +186,41 @@ def _ctx(tracking_valid=True):
 
 
 # ---------------------------------------------------------------------------
-# U key toggle + start gate
+# U key start-only + start gate (2026-11-25, user's order)
 # ---------------------------------------------------------------------------
 
-def test_u_toggles_autopilot_on_and_off():
+def test_u_is_start_only_second_press_ignored():
     """U starts the autopilot (with ctx, so the gate applies) and a
-    second U stops it."""
+    second, third, fourth U while it runs does NOTHING — U is
+    start-only, not a toggle. The old toggle-off made the user kill
+    the autopilot right after starting it by pressing U again."""
     fake = FakeTello()
     ctrl = _hovering_ctrl(fake)
     auto = Autopilot(ctrl)
     assert dispatch_drone_key(ord("u"), ctrl, auto, _ctx()) is True
     assert auto.state == "SCAN", f"U did not start the autopilot: {auto.state}"
+    for _ in range(3):
+        assert dispatch_drone_key(ord("u"), ctrl, auto, _ctx()) is True
+        assert auto.state == "SCAN", \
+            f"repeat U stopped the autopilot: {auto.state}"
+    print("PASS u_is_start_only_second_press_ignored")
+
+
+def test_manual_key_still_takes_over_after_u_start():
+    """Start via U, then W: the manual key stops the autopilot FIRST
+    and the move still reaches the drone — U being start-only did
+    not remove manual takeover."""
+    fake = FakeTello()
+    ctrl = _hovering_ctrl(fake)
+    auto = Autopilot(ctrl)
     assert dispatch_drone_key(ord("u"), ctrl, auto, _ctx()) is True
-    assert auto.state == "OFF", f"second U did not stop it: {auto.state}"
-    print("PASS u_toggles_autopilot_on_and_off")
+    assert auto.state == "SCAN"
+    assert dispatch_drone_key(ord("w"), ctrl, auto, _ctx()) is True
+    assert auto.state == "OFF", "manual key did not stop the autopilot"
+    assert wait_until(lambda: ("move_forward", (20,)) in fake.calls,
+                      timeout=3.0), f"move not sent: {fake.calls}"
+    assert wait_idle(ctrl)
+    print("PASS manual_key_still_takes_over_after_u_start")
 
 
 def test_u_start_refused_when_not_hovering_or_no_tracking():
@@ -550,7 +574,8 @@ def test_operator_status_and_autopilot_stop_endpoint():
 
 def main():
     tests = [
-        test_u_toggles_autopilot_on_and_off,
+        test_u_is_start_only_second_press_ignored,
+        test_manual_key_still_takes_over_after_u_start,
         test_u_start_refused_when_not_hovering_or_no_tracking,
         test_u_without_autopilot_does_nothing,
         test_manual_key_stops_autopilot_before_executing,

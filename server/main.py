@@ -1017,6 +1017,13 @@ _MANUAL_KEYS = frozenset(
      ord("d"), ord("i"), ord("k"), ord("j"), ord("l"),
      82, 84, 81, 83])  # arrow keys: Up/Down/Left/Right = W/S/A/D
 
+#: Throttle for the "U is start-only" log line: one line at most per
+#: 5 s, so mashing U while the autopilot runs does not spam the
+#: console (2026-11-25, user's order — U is start-only, not a
+#: toggle). Mutable cell so dispatch_drone_key can update it.
+_U_ALREADY_RUNNING_LOG_S = 5.0
+_last_u_running_log = [0.0]
+
 
 def build_auto_context(tracking_valid, bridge_valid, battery, doorway,
                        detections, t):
@@ -1137,32 +1144,41 @@ def dispatch_drone_key(key, flight_ctrl, autopilot=None, ctx=None):
     the window is now done with its X button (the caller watches for
     it); Ctrl+C in the console is the full exit and lands the drone.
 
-    Autonomous mode (2026-11-25): U toggles the autopilot — starting
-    it WITH the current ctx, so the start gate enforces HOVERING +
-    tracking_valid (which requires VIO init, which requires the floor
-    gate: take off facing the room with the floor visible in the
-    lower frame). Any manual key (W/S/A/D/I/K/J/L/Q/T/E) while the
-    autopilot is running stops it FIRST, then runs the manual
-    command — the human always takes over. ``autopilot`` / ``ctx``
-    are optional so the old two-argument callers (and tests) keep
-    working; with no autopilot wired, U does nothing.
+    Autonomous mode (2026-11-25): U STARTS the autopilot — start-only,
+    NOT a toggle (user's order, 2026-11-25: the toggle-off made him
+    kill the autopilot right after starting it by pressing U again).
+    Pressing U while the autopilot is already running does NOTHING
+    (one throttled log line). Stopping stays exactly as it was: any
+    manual key (W/S/A/D/I/K/J/L/Q/T/E) while the autopilot is running
+    stops it FIRST, then runs the manual command — the human always
+    takes over — and the operator /api/autopilot/stop still stops it.
+    There is no stop key. U starts WITH the current ctx, so the start
+    gate enforces HOVERING + tracking_valid (which requires VIO init,
+    which requires the floor gate: take off facing the room with the
+    floor visible in the lower frame). ``autopilot`` / ``ctx`` are
+    optional so the old two-argument callers (and tests) keep working;
+    with no autopilot wired, U does nothing.
     """
     tello = getattr(flight_ctrl, "tello", None)
     if tello is None:
         return False
-    if key == ord("u"):  # Autopilot toggle
+    if key == ord("u"):  # Autopilot start ONLY (not a toggle)
         if autopilot is None:
             return False
-        if getattr(autopilot, "state", "OFF") == "OFF":
-            if autopilot.start(ctx) is False:
-                log.warning("Autopilot did not start: %s",
-                            getattr(autopilot, "message", ""))
-            else:
-                log.info("Autopilot started (%s)",
-                         getattr(autopilot, "message", ""))
+        if getattr(autopilot, "state", "OFF") != "OFF":
+            # Already running: U does nothing. Throttled log so
+            # mashing U does not spam the console.
+            now = time.monotonic()
+            if now - _last_u_running_log[0] >= _U_ALREADY_RUNNING_LOG_S:
+                _last_u_running_log[0] = now
+                log.info("Autopilot already running — U is start-only")
+            return True
+        if autopilot.start(ctx) is False:
+            log.warning("Autopilot did not start: %s",
+                        getattr(autopilot, "message", ""))
         else:
-            autopilot.stop()
-            log.info("Autopilot stopped by U key")
+            log.info("Autopilot started (%s)",
+                     getattr(autopilot, "message", ""))
         return True
     if key in _MANUAL_KEYS and autopilot is not None and \
             getattr(autopilot, "state", "OFF") != "OFF":

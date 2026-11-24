@@ -10,7 +10,8 @@ tests/run_tests.py (that runner is the 27-scenario virtual suite).
 
 What each test proves:
 * Full mission: SCAN -> AIM -> APPROACH -> PASS -> SEARCH -> TRACK with
-  scripted doorway/person inputs, 20 cm forward steps, 30 deg turns.
+  scripted doorway/person inputs, 20 cm forward steps, 15 deg blind
+  scan turns (SCAN / SEARCH), 30 deg correction turns (AIM / TRACK).
 * AIM centres an off-centre doorway before approaching; APPROACH
   re-centres when the doorway drifts.
 * PASS keeps stepping its bounded count when the doorway leaves view
@@ -152,8 +153,8 @@ def test_full_mission_scan_to_track():
     c = ctx()
     run_ticks(ap, c, 5)  # scanning, no doorway yet
     assert ap.state == "SCAN"
-    # One 30-deg turn per (1 issue + 3 pause) ticks: 2 turns in 5 ticks.
-    assert ctrl.command_names() == ["turn_right 30", "turn_right 30"]
+    # One 15-deg turn per (1 issue + 3 pause) ticks: 2 turns in 5 ticks.
+    assert ctrl.command_names() == ["turn_right 15", "turn_right 15"]
 
     # Doorway appears, centred -> AIM -> APPROACH.
     c.doorway = doorway(center_x=480, width=100)
@@ -354,7 +355,7 @@ def test_no_doorway_full_scan_goes_nodoor_no_wandering():
     assert run_until(ap, c, "NODOOR", max_ticks=300) == "NODOOR"
     assert "door not found" in ap.message
     names = ctrl.command_names()
-    assert names.count("turn_right 30") == 12, f"full 360 = 12 turns, got {names}"
+    assert names.count("turn_right 15") == 24, f"full 360 = 24 turns, got {names}"
     assert not any(n.startswith("forward") for n in names)
     assert not any(n.startswith("move_") for n, _ in ctrl.tello.calls)
     # NODOOR hovers: further ticks issue nothing.
@@ -401,6 +402,46 @@ def test_track_person_lost_returns_to_search():
     assert run_until(ap, c, "SEARCH") == "SEARCH"
 
 
+def test_scan_and_search_turns_are_15_deg_corrections_stay_30():
+    """2026-11-25 tracker fix: blind-scan turns (SCAN / SEARCH) are
+    15 deg — a 30-deg turn sheds the VIO map to 0 in 3 frames —
+    while targeted correction turns (AIM re-centre, TRACK edge)
+    stay 30 deg. Manual keys stay 30 deg (test_wiring)."""
+    # SCAN: 15 deg.
+    ctrl = FakeController()
+    ap = Autopilot(ctrl)
+    ap.start()
+    c = ctx()
+    run_ticks(ap, c, 5)
+    assert ap.state == "SCAN"
+    assert ctrl.command_names() == ["turn_right 15", "turn_right 15"]
+    # SEARCH: 15 deg (drive to SEARCH, person never appears).
+    ctrl2 = FakeController()
+    ap2 = Autopilot(ctrl2)
+    ap2.start()
+    c2 = ctx(doorway=doorway(center_x=480, width=100))
+    assert run_until(ap2, c2, "APPROACH") == "APPROACH"
+    c2.doorway = doorway(center_x=480, width=500)
+    assert run_until(ap2, c2, "SEARCH") == "SEARCH"
+    n_before = len(ctrl2.commands)
+    run_ticks(ap2, c2, 5)
+    search_turns = [n for n, _ in ctrl2.commands[n_before:]
+                    if n.startswith("turn_")]
+    assert search_turns, "SEARCH issued no turn"
+    assert all(n == "turn_right 15" for n in search_turns), \
+        f"SEARCH turns are not 15 deg: {search_turns}"
+    # AIM correction: still 30 deg (off-centre doorway, left).
+    ctrl3 = FakeController()
+    ap3 = Autopilot(ctrl3)
+    ap3.start()
+    c3 = ctx(doorway=doorway(center_x=200, width=100))
+    assert run_until(ap3, c3, "AIM") == "AIM"
+    run_ticks(ap3, c3, 6)
+    assert "turn_left 30" in ctrl3.command_names()
+    assert "turn_left 15" not in ctrl3.command_names()
+    print("PASS scan_and_search_turns_are_15_deg_corrections_stay_30")
+
+
 # ---------------------------------------------------------------------------
 # Mover mapping + non-blocking
 # ---------------------------------------------------------------------------
@@ -427,7 +468,7 @@ def test_mover_mapping_path_without_tello():
     ap.start()
     c = ctx()
     run_ticks(ap, c, 5)
-    assert ("cw", 30) in calls  # SCAN turn went through the mapping
+    assert ("cw", 15) in calls  # SCAN turn went through the mapping
     c.doorway = doorway(center_x=480, width=100)
     assert run_until(ap, c, "APPROACH") == "APPROACH"
     run_ticks(ap, c, 10)

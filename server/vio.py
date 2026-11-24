@@ -2168,8 +2168,20 @@ class MonocularVO:
         # reprojection to fail, and deleting them for failing a
         # triangulation gate is exactly the map drain the rotation
         # mode exists to prevent (report §1.2(g)).
+        #
+        # VISION POSES ONLY (2026-11-25 tracker fix): the prune
+        # judges points against the accepted pose's translation.
+        # On a rotation-only (attitude-aided) pose that translation
+        # is a motion-model PREDICTION, not a measurement — a
+        # reprojection failure there is the pose's fault, not the
+        # point's. Measured on the synthetic room: during a 30-deg
+        # turn the prune deleted 27 of 57 surviving map points in
+        # one frame and all 8 remaining 3D points in the next, so
+        # the map hit 0 while the pose was still valid. Skipping
+        # the prune on attitude-aided frames costs nothing — the
+        # points are re-checked on the next vision frame's prune.
         keep = np.ones(len(pts_cur), dtype=bool)
-        if int(has3d.sum()) > 0:
+        if pose_source == POSE_VISION and int(has3d.sum()) > 0:
             err = _reproj_err(R_new, C_new, pts3d[has3d], pts_cur[has3d],
                               self._Kmat)
             keep[np.nonzero(has3d)[0]] = err <= PNP_REPROJECTION_ERROR_PX
@@ -2181,6 +2193,8 @@ class MonocularVO:
                 ids = ids[keep]
                 origin_pose = [origin_pose[i] for i in np.nonzero(keep)[0]]
                 origin_uv = origin_uv[keep]
+        else:
+            diag["pruned"] = 0
 
         # Deferred triangulation (report §1.2(a)/(b)): a bearing
         # becomes a 3D map point only once the PARALLAX ANGLE at the
@@ -2237,11 +2251,25 @@ class MonocularVO:
         self._prev_ids = ids
         self._prev_origin_pose = list(origin_pose)
         self._prev_origin_uv = origin_uv
-        self._good_gray, self._good_pts = gray, pts_cur.copy()
-        self._good_pts3d = pts3d_new.copy()
-        self._good_pose = (R_new.copy(), C_new.copy())
-        self._good_des, self._good_des_valid = self._orb_descriptors(
-            gray, pts_cur)
+        # Relocalisation anchor (2026-11-25 tracker fix): ONLY a
+        # vision-PnP frame may become the anchor. An attitude-aided
+        # (rotation-only) frame can carry ZERO 3D points — during a
+        # turn the map drains and no new points triangulate (no
+        # parallax) — and adopting it overwrites the last frame
+        # that had a real map. _try_relocalise LK-tracks the
+        # anchor's points and needs >= 12 with 3D, so a drained
+        # anchor makes recovery impossible. Measured on the
+        # synthetic room: a 30-deg turn dropped the anchor from
+        # 130 3D points to 0 in 3 frames (and the 04:31 live run's
+        # map collapsed 482 -> 15 -> 0 the same way). Keeping the
+        # last vision frame as the anchor means relocalisation
+        # still has a map to match against after the turn.
+        if pose_source == POSE_VISION:
+            self._good_gray, self._good_pts = gray, pts_cur.copy()
+            self._good_pts3d = pts3d_new.copy()
+            self._good_pose = (R_new.copy(), C_new.copy())
+            self._good_des, self._good_des_valid = self._orb_descriptors(
+                gray, pts_cur)
         # Tracking keyframe (report §1.2(f)): snapshot for the
         # windowed BA and the relocalisation database.
         self._maybe_keyframe(gray, pts_cur, pts3d_new, ids, diag)
@@ -2757,6 +2785,33 @@ class MonocularVO:
 
     # -- relocalisation --------------------------------------------------------
 
+    def _try_orb_relocalise(self, gray, diag):
+        """ORB-descriptor recovery for relocalisation (keyframes +
+        good frame, see _orb_recover).
+
+        Same acceptance as the LK path's ORB branch: the PnP inlier
+        gate inside _orb_recover + the height guard only (the drone
+        kept moving while lost, so no jump guard — a recovery pose
+        is a re-observation, not a continuation). Returns the adopt
+        triple, or None. Shared by the two _try_relocalise call
+        sites: a PnP solve that failed, and an LK anchor too thin
+        to even attempt PnP (2026-11-25 tracker fix — before, a
+        drained anchor returned False here without ever consulting
+        the keyframe ORB database, which survives independently
+        of the live anchor).
+        """
+        rec = self._orb_recover(gray, diag)
+        if rec is None:
+            return None
+        R_new, C_new, n_inliers, m_pts, m_3d = rec
+        lo, hi = CAM_HEIGHT_RANGE_M
+        if not (lo <= float(C_new[1]) <= hi):
+            return None
+        diag["inliers"] = n_inliers
+        diag["relocalised"] = "orb"
+        diag["pose_source"] = POSE_VISION
+        return self._adopt_recovered(m_pts, m_3d, R_new, C_new, gray, diag)
+
     def _try_relocalise(self, gray, diag):
         """LK-track the last good frame's map points into this frame + PnP.
 
@@ -2776,6 +2831,15 @@ class MonocularVO:
         tracked = self._track_lk(self._good_gray, self._good_pts, gray)
         if tracked[0] is None:
             diag["n_tracked"] = 0
+            # LK itself failed (the current view is too far from the
+            # anchor's for optical flow) — the ORB keyframe database
+            # may still match this view. Try it before giving up
+            # (2026-11-25 tracker fix, same as the thin-anchor case
+            # below). On a blank/featureless frame ORB finds nothing
+            # and this returns None at once.
+            got = self._try_orb_relocalise(gray, diag)
+            if got is not None:
+                return got
             return self._external_pose(), False, diag
         pts_cur, _pts_prev, idx = tracked
         diag["n_tracked"] = len(pts_cur)
@@ -2783,6 +2847,13 @@ class MonocularVO:
         has3d = ~np.isnan(pts3d).any(axis=1)
         diag["n_map"] = int(has3d.sum())
         if int(has3d.sum()) < MIN_PNP_THIN_INLIERS:
+            # The LK anchor is too thin to attempt PnP — but the
+            # KEYFRAME ORB database may still match this view (it
+            # survives independently of the live anchor). Try it
+            # before giving up (2026-11-25 tracker fix).
+            got = self._try_orb_relocalise(gray, diag)
+            if got is not None:
+                return got
             return self._external_pose(), False, diag
         Rg, Cg = self._good_pose
         sol = self._solve_pnp(pts3d[has3d], pts_cur[has3d],
@@ -2790,16 +2861,9 @@ class MonocularVO:
                               thresh_px=PNP_REPROJECTION_ERROR_PX,
                               diag=diag)
         if sol is None:
-            rec = self._orb_recover(gray, diag)
-            if rec is not None:
-                R_new, C_new, n_inliers, m_pts, m_3d = rec
-                lo, hi = CAM_HEIGHT_RANGE_M
-                if lo <= float(C_new[1]) <= hi:
-                    diag["inliers"] = n_inliers
-                    diag["relocalised"] = "orb"
-                    diag["pose_source"] = POSE_VISION
-                    return self._adopt_recovered(
-                        m_pts, m_3d, R_new, C_new, gray, diag)
+            got = self._try_orb_relocalise(gray, diag)
+            if got is not None:
+                return got
             return self._external_pose(), False, diag
         R_new, C_new, n_inliers = sol
         ratio = n_inliers / max(1, int(has3d.sum()))
