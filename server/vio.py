@@ -1202,6 +1202,158 @@ class MonocularVO:
     def last_diag(self):
         return dict(self._last_diag)
 
+    # -- saved-map export / adopt (2026-11-25, saved-map relocalisation)
+    # The map has no single array: live points live in _prev_*,
+    # history in _keyframes (snapshots with persistent point IDs).
+    # export_map_data() consolidates them by ID so server.map_store
+    # can persist the map and relocalise against it after a loss,
+    # instead of the VIO staying lost until a from-scratch
+    # re-initialisation (which would teleport the world frame).
+    # Points are in the INTERNAL (OpenCV Y-down) world frame — the
+    # same frame _solve_pnp expects — so a saved map is only valid
+    # in a session anchored at the same start pose (takeoff beside
+    # the phone). Export is read-only: it never mutates tracking.
+
+    def export_map_data(self):
+        """Consolidate the sparse map into a plain dict for saving.
+
+        Deduplicates by persistent point ID across the live set and
+        all keyframes (oldest first, so the newest — BA-refined —
+        observation of a point wins); a point keeps the newest
+        VALID ORB descriptor seen for it. Bearings (no 3D yet,
+        id -1 / NaN) are skipped: they cannot anchor a PnP solve.
+        Returns the dict ``server.map_store.MapData.from_dict``
+        consumes (points, descriptors, des_valid, ids, K,
+        camera_height_m, ref_R/ref_C/ref_frame, keyframe poses,
+        start_R/start_C, n_frames). Empty when uninitialised.
+        """
+        by_id = {}
+
+        def _add(pts3d, des, des_valid, ids):
+            if pts3d is None or ids is None:
+                return
+            pts3d = np.asarray(pts3d, dtype=float)
+            ids = np.asarray(ids, dtype=int)
+            n = min(len(pts3d), len(ids))
+            for i in range(n):
+                pid = int(ids[i])
+                if pid < 0:
+                    continue
+                p = pts3d[i]
+                if not np.isfinite(p).all():
+                    continue
+                rec = by_id.get(pid)
+                if rec is None:
+                    rec = {"point": p.copy(), "des": None,
+                           "des_valid": False}
+                    by_id[pid] = rec
+                else:
+                    rec["point"] = p.copy()
+                if (des is not None and des_valid is not None
+                        and i < len(des_valid) and bool(des_valid[i])):
+                    rec["des"] = np.asarray(
+                        des[i], dtype=np.uint8).copy()
+                    rec["des_valid"] = True
+
+        _add(self._prev_pts3d, None, None, self._prev_ids)
+        for kf in self._keyframes:
+            _add(kf.get("pts3d"), kf.get("des"), kf.get("des_valid"),
+                 kf.get("ids"))
+        # Descriptors for the live set: keyframes carry descriptors
+        # only for points observed at a keyframe, and the init
+        # keyframe carries none at all — on a short flight that
+        # leaves most of the map undescribed. The live tracked set
+        # is the most recently observed view, so fill any point
+        # still without a descriptor from the previous frame (one
+        # ORB detect, at save time only — never per frame). Measured
+        # on the synthetic room: 73 -> ~127 described points.
+        # Best-effort: a failure here must never lose the map.
+        if (self._prev_gray is not None and self._prev_pts is not None
+                and len(self._prev_pts) and self._prev_ids is not None):
+            try:
+                des_live, valid_live = self._orb_descriptors(
+                    self._prev_gray, self._prev_pts)
+                for i, pid in enumerate(
+                        np.asarray(self._prev_ids, dtype=int)):
+                    rec = by_id.get(int(pid))
+                    if (rec is not None and not rec["des_valid"]
+                            and i < len(valid_live)
+                            and bool(valid_live[i])):
+                        rec["des"] = np.asarray(
+                            des_live[i], dtype=np.uint8).copy()
+                        rec["des_valid"] = True
+            except Exception as exc:  # noqa: BLE001 - best-effort only
+                log.debug("export_map_data: live descriptors failed: %s",
+                          exc)
+        pids = sorted(by_id)
+        n = len(pids)
+        points = np.zeros((n, 3), dtype=float)
+        descriptors = np.zeros((n, 32), dtype=np.uint8)
+        des_valid = np.zeros(n, dtype=bool)
+        for j, pid in enumerate(pids):
+            rec = by_id[pid]
+            points[j] = rec["point"]
+            if rec["des"] is not None:
+                descriptors[j] = rec["des"]
+                des_valid[j] = True
+        # Reference pose for the PnP init: newest keyframe, else the
+        # last good pose, else the current pose (all internal frame).
+        if self._keyframes:
+            kf = self._keyframes[-1]
+            ref_R, ref_C = kf["R"].copy(), kf["C"].copy()
+            ref_frame = int(kf.get("frame", self._n_frames))
+        elif self._good_pose is not None:
+            ref_R, ref_C = (self._good_pose[0].copy(),
+                            self._good_pose[1].copy())
+            ref_frame = self._n_frames
+        else:
+            ref_R, ref_C = self._R.copy(), self._C.copy()
+            ref_frame = self._n_frames
+        kf_R = np.array([kf["R"] for kf in self._keyframes],
+                        dtype=float).reshape(-1, 3, 3)
+        kf_C = np.array([kf["C"] for kf in self._keyframes],
+                        dtype=float).reshape(-1, 3)
+        kf_frame = np.array([int(kf.get("frame", 0))
+                             for kf in self._keyframes], dtype=int)
+        start_R = (None if self._start_R is None
+                   else _to_external_R(self._start_R))
+        start_C = (None if self._start_C is None
+                   else np.asarray(self._start_C, dtype=float).copy())
+        return {
+            "points": points, "descriptors": descriptors,
+            "des_valid": des_valid,
+            "ids": np.array(pids, dtype=np.int64),
+            "K": dict(self.K),
+            "camera_height_m": float(self.camera_height_m),
+            "ref_R": ref_R, "ref_C": ref_C, "ref_frame": ref_frame,
+            "keyframe_R": kf_R, "keyframe_C": kf_C,
+            "keyframe_frame": kf_frame,
+            "start_R": start_R, "start_C": start_C,
+            "n_frames": int(self._n_frames),
+            "n_keyframes": len(self._keyframes),
+        }
+
+    def adopt_saved_map_pose(self, pts_cur, pts3d, R_new, C_new, gray,
+                             diag=None):
+        """Resume tracking from a pose relocalised against a SAVED map.
+
+        Public entry point for ``server.map_store.try_relocalise``.
+        ``(R_new, C_new)`` are in the internal frame (as returned by
+        ``_solve_pnp``). Unlike ``_adopt_recovered`` this also marks
+        the VIO initialised: a saved map IS the initialisation — its
+        world frame is the saved session's frame, so no from-scratch
+        re-initialisation (and no teleport) is needed. Returns the
+        ``(pose, True, diag)`` triple for ``update()``.
+        """
+        if diag is None:
+            diag = {}
+        self._initialized = True
+        return self._adopt_recovered(
+            np.asarray(pts_cur, dtype=np.float32),
+            np.asarray(pts3d, dtype=float),
+            np.asarray(R_new, dtype=float),
+            np.asarray(C_new, dtype=float), gray, diag)
+
     # -- feature handling ----------------------------------------------------
 
     def _detect(self, gray, mask=None):

@@ -57,6 +57,7 @@ if str(WALL_MARKER_DIR) not in sys.path:
 from server import bridge as bridge_mod          # noqa: E402
 from server import depth as depth_mod            # noqa: E402
 from server import fusion as fusion_mod          # noqa: E402
+from server.autopilot import AutoContext         # noqa: E402
 from server.geometry import DRONE_K              # noqa: E402
 
 log = logging.getLogger(__name__)
@@ -388,8 +389,11 @@ OPERATOR_HTML = """<!DOCTYPE html>
   Markers: <b id="fMarkers">—</b><br>
   Uptime: <b id="fUptime">—</b><br>
   Last frame: <b id="fLastFrame">—</b><br>
-  Frames (last 10 s): <b id="fFrames10">—</b>
+  Frames (last 10 s): <b id="fFrames10">—</b><br>
+  Auto: <b id="fAuto">—</b><br>
+  Height: <b id="fHeight">—</b>
 </div>
+<div id="notjoy" style="display:none; background:#3d1111; border:1px solid #c62828; border-radius:12px; padding:14px 16px; font-size:15px; line-height:1.5; margin-bottom:20px;"></div>
 <h2>Checklist</h2>
 <ul id="checklist">
   <li id="cBridge"><span class="tick">○</span> Bridge linked</li>
@@ -397,6 +401,7 @@ OPERATOR_HTML = """<!DOCTYPE html>
   <li id="cPerson"><span class="tick">○</span> Person found</li>
 </ul>
 <button id="controlBtn" type="button">Stop</button>
+<button id="autoStopBtn" type="button" style="width:100%; height:48px; margin-top:10px; border:1px solid #666; border-radius:12px; background:#222; color:#eee; font-size:16px; font-weight:700; cursor:pointer;">Stop autopilot</button>
 <div id="conn">Connecting…</div>
 <script>
 'use strict';
@@ -409,6 +414,10 @@ var fMarkers = document.getElementById('fMarkers');
 var fUptime = document.getElementById('fUptime');
 var fLastFrame = document.getElementById('fLastFrame');
 var fFrames10 = document.getElementById('fFrames10');
+var fAuto = document.getElementById('fAuto');
+var fHeight = document.getElementById('fHeight');
+var notjoy = document.getElementById('notjoy');
+var autoStopBtn = document.getElementById('autoStopBtn');
 var cBridge = document.getElementById('cBridge');
 var cDrone = document.getElementById('cDrone');
 var cPerson = document.getElementById('cPerson');
@@ -445,6 +454,19 @@ function render(s) {
   fUptime.textContent = (s.uptime_s === null || s.uptime_s === undefined) ? '—' : s.uptime_s + ' s';
   fLastFrame.textContent = hasFrame ? s.last_frame_age_s + ' s ago' : '—';
   fFrames10.textContent = hasFrame ? String(s.frames_last_10s) : '—';
+  // AUTO: autopilot state + message, height, Not-joystick warning.
+  // "—" until the live loop has reported (never a made-up value).
+  // A LANDED status with height > 0 means the drone is still
+  // airborne — the height is what makes that visible.
+  fAuto.textContent = s.auto_state ? s.auto_state + (s.auto_message ? ' — ' + s.auto_message : '') : '—';
+  fHeight.textContent = (s.height_cm === null || s.height_cm === undefined) ? '—' : s.height_cm + ' cm';
+  if (s.not_joystick) {
+    notjoy.style.display = 'block';
+    notjoy.textContent = s.not_joystick;
+  } else {
+    notjoy.style.display = 'none';
+    notjoy.textContent = '';
+  }
   setCheck(cBridge, !!s.bridge_valid);
   setCheck(cDrone, live);
   setCheck(cPerson, found);
@@ -473,6 +495,16 @@ btn.addEventListener('click', function () {
   })
     .then(function (r) { return r.json(); })
     .then(function (s) { running = !!s.running; poll(); })
+    .catch(function () {
+      conn.textContent = 'No connection';
+      conn.className = 'bad';
+    });
+});
+
+autoStopBtn.addEventListener('click', function () {
+  fetch('/api/autopilot/stop', { method: 'POST' })
+    .then(function (r) { return r.json(); })
+    .then(function (s) { poll(); })
     .catch(function () {
       conn.textContent = 'No connection';
       conn.className = 'bad';
@@ -510,6 +542,29 @@ class ServerState:
         self.frame_times = deque()  # wall times of frames, last 10 s only
         self.running = True   # pipeline control (operator Start/Stop)
         self.paused = False   # True while the pipeline is stopped
+        # Autonomous mode (wired by main(): the live loop updates these
+        # once per iteration; the operator page reads them via
+        # /api/status). All start as "nothing known yet" — the page
+        # shows "—" for them, never a made-up value.
+        self.autopilot = None  # Autopilot object (main() sets it)
+        self.auto_state = "OFF"
+        self.auto_message = "autopilot off"
+        self.height_cm = None  # guarded tello.get_height(), or None
+        self.not_joystick_msg = None  # set once a Not-joystick hard
+        # stop fires; stays visible until the server restarts.
+
+    def update_auto(self, auto_state, auto_message, height_cm=None):
+        """Record the autopilot state + drone height for /api/status."""
+        with self.lock:
+            self.auto_state = auto_state
+            self.auto_message = auto_message
+            if height_cm is not None:
+                self.height_cm = height_cm
+
+    def set_not_joystick(self, message):
+        """Record a Not-joystick hard stop for the operator page."""
+        with self.lock:
+            self.not_joystick_msg = message
 
     def update_from_pipeline(self, pipeline, marker, info, wall_t,
                              scenario_t):
@@ -562,6 +617,10 @@ class ServerState:
                 "frames_last_10s": frames_10s,
                 "running": self.running,
                 "paused": self.paused,
+                "auto_state": self.auto_state,
+                "auto_message": self.auto_message,
+                "height_cm": self.height_cm,
+                "not_joystick": self.not_joystick_msg,
             }
 
 
@@ -628,6 +687,17 @@ def make_handler(state, viewer_path):
                     self._send(400, json.dumps(
                         {"error": "action must be 'start' or 'stop'"}),
                         "application/json")
+            elif self.path == "/api/autopilot/stop":
+                # Operator Stop for the autopilot (same POST pattern as
+                # /api/control). Stops autonomous flight at once; the
+                # drone keeps hovering under manual control.
+                ap = getattr(state, "autopilot", None)
+                if ap is not None:
+                    ap.stop()
+                self._send(200, json.dumps({
+                    "auto_state": getattr(ap, "state", "OFF")
+                    if ap is not None else "OFF"}),
+                    "application/json")
             else:
                 self._send(404, "not found", "text/plain")
 
@@ -733,6 +803,14 @@ class SafeFlightController:
         self.lock = threading.Lock()
         self.status = "LANDED"  # LANDED, TAKING_OFF, HOVERING, MOVING, LANDING
         self.last_action = "Ready"
+        # Last command rejection, for the Not-joystick hard stop
+        # (2026-11-25): None normally; "not-joystick" when the last
+        # command was rejected with "error Not joystick", otherwise
+        # the lowercased error text. A new command clears it at the
+        # start of its worker; a rejection sets it in the except
+        # branch below. The live loop watches it and stops the
+        # autopilot at once — the reset to LANDED below is unchanged.
+        self.last_reject = None
         # Ground watchdog (2026-11-25): the drone can land itself —
         # low-battery failsafe, blinking red light — without telling
         # us, so status stays HOVERING and [T] is ignored ("Takeoff
@@ -810,6 +888,8 @@ class SafeFlightController:
 
         def _worker():
             try:
+                self.last_reject = None  # a new command clears the
+                # previous rejection; only a failure below sets it.
                 self.last_action = cmd_name
                 if cmd_name == "takeoff":
                     if self.status != "LANDED":
@@ -843,6 +923,14 @@ class SafeFlightController:
             except Exception as exc:
                 log.error("Flight command '%s' returned error: %s", cmd_name, exc)
                 msg = str(exc).lower()
+                # Not-joystick hard-stop signal (additive only — the
+                # reset to LANDED below is unchanged): record the
+                # rejection so the live loop can stop the autopilot
+                # and tell the operator the cause.
+                if "not joystick" in msg:
+                    self.last_reject = "not-joystick"
+                else:
+                    self.last_reject = msg
                 if "not joystick" in msg or "no valid imu" in msg:
                     # The drone is no longer under SDK control (the Tello
                     # app grabbed it mid-flight: "Not joystick") or it is
@@ -855,11 +943,18 @@ class SafeFlightController:
                     # said HOVERING, so five [T] presses were ignored.)
                     kind = "TAKEOFF" if cmd_name == "takeoff" else "MOVE"
                     log.error(
-                        "%s REJECTED (%s): the Tello app on the phone "
-                        "is holding the controls, or the drone is down. "
-                        "Force-close the Tello app on the phone, reboot "
-                        "the drone, then restart the server and press "
-                        "[T] again.", kind, exc)
+                        "%s REJECTED (%s): commands rejected "
+                        "('error Not joystick') — reset the drone "
+                        "(hold power 5 s until yellow flash) and try "
+                        "again. The Tello app is ruled out (it was "
+                        "never opened today; DJITelloPy issue #201 "
+                        "shows this in pure SDK scripts too), so the "
+                        "factory reset is the fix to try. Secondary "
+                        "check: Force-close the Tello app completely "
+                        "(swipe it away from the app switcher). "
+                        "Reboot the drone, then restart the server "
+                        "and press [T] again.",
+                        kind, exc)
                     self.status = "LANDED"
                 elif self.status == "TAKING_OFF":
                     self.status = "LANDED"
@@ -895,7 +990,142 @@ def live_pose_step(vio, frame, start_pose, t):
     return vio, start_pose, False
 
 
-def dispatch_drone_key(key, flight_ctrl):
+# Not-joystick hard-stop message (2026-11-25 04:06 run, the #1
+# blocker): every move was rejected with 'error Not joystick'.
+# SUPERSEDED 2026-11-25: the Tello app is RULED OUT — the user did
+# not open the Tello app at all today. Research confirms 'Not
+# joystick' is a known Tello/djitellopy issue that also happens in
+# pure SDK scripts with no app (DJITelloPy issue #201: commands
+# work for a while, then suddenly 'error Not joystick'). Reported
+# causes: commands sent too fast while the drone is not ready;
+# starting the program too soon after connecting (we saw a 0xcc
+# decode error on the first 'command'); low battery / overheating;
+# old djitellopy. The most-reported fix is a factory reset — so the
+# primary message is the reset, and force-closing the app is only a
+# secondary check. The operator must see the reset, on the log line
+# and on the /operator page — not just "landed".
+NOT_JOYSTICK_MESSAGE = (
+    "Commands rejected ('error Not joystick') — reset the drone "
+    "(hold power 5 s until yellow flash) and try again. "
+    "Secondary check: force-close the Tello app completely "
+    "(swipe it away from the app switcher).")
+
+#: Manual flight keys: pressing any of these while the autopilot is
+#: running stops it FIRST (manual takeover), then runs the command.
+_MANUAL_KEYS = frozenset(
+    [ord("q"), ord("t"), ord("e"), ord("w"), ord("s"), ord("a"),
+     ord("d"), ord("i"), ord("k"), ord("j"), ord("l"),
+     82, 84, 81, 83])  # arrow keys: Up/Down/Left/Right = W/S/A/D
+
+
+def build_auto_context(tracking_valid, bridge_valid, battery, doorway,
+                       detections, t):
+    """Build one tick's AutoContext from live loop values.
+
+    ``battery`` is the meta battery ("" / None when unknown);
+    ``detections`` is the pipeline's last detections list (or None).
+    The person is the max-confidence detection; its centre-x is the
+    bbox centre-x, or None when no person is visible. Pure function
+    (no I/O) so the wiring tests can check it directly.
+    """
+    battery_pct = None
+    if battery != "" and battery is not None:
+        try:
+            battery_pct = float(battery)
+        except (TypeError, ValueError):
+            battery_pct = None
+    person_visible = False
+    person_center_x = None
+    if detections:
+        best = max(detections, key=lambda d: d.get("conf", 0.0))
+        bbox = best.get("bbox_xyxy")
+        if bbox is not None:
+            person_visible = True
+            person_center_x = float((bbox[0] + bbox[2]) / 2.0)
+    return AutoContext(
+        tracking_valid=bool(tracking_valid),
+        bridge_valid=bool(bridge_valid),
+        battery_pct=battery_pct,
+        doorway=doorway,
+        person_visible=person_visible,
+        person_center_x=person_center_x,
+        time=float(t))
+
+
+def check_not_joystick_stop(flight_ctrl, autopilot, state=None):
+    """Not-joystick hard stop (live-loop side).
+
+    When the autopilot is running and the flight controller's last
+    command was rejected with "not joystick", stop the autopilot at
+    once and surface the cause: log it and record it on the
+    operator state so /operator shows the reset message, not just
+    "landed". (The autopilot's own self-landing rule also fires via
+    the LANDED status, but the operator must see the reset fix.)
+    Returns True when it stopped the autopilot, False otherwise.
+    Never raises.
+    """
+    try:
+        if autopilot is None:
+            return False
+        if getattr(autopilot, "state", "OFF") == "OFF":
+            return False
+        if getattr(flight_ctrl, "last_reject", None) != "not-joystick":
+            return False
+        autopilot.stop()
+        log.error("Not-joystick hard stop: autopilot stopped. %s",
+                  NOT_JOYSTICK_MESSAGE)
+        if state is not None:
+            state.set_not_joystick(NOT_JOYSTICK_MESSAGE)
+        return True
+    except Exception as exc:  # a stop check must never break the loop
+        log.debug("check_not_joystick_stop failed: %s", exc)
+        return False
+
+
+class HoverGate:
+    """Hover-stable gate (2026-11-25): never send the first move
+    until the hover is stable.
+
+    The live loop must not call ``autopilot.tick()`` until the
+    controller has been continuously HOVERING for at least
+    ``stable_s`` (5 s) after takeoff — commands sent too fast while
+    the drone is not ready are a reported cause of 'error Not
+    joystick' (DJITelloPy issue #201). The timer resets whenever
+    the status leaves HOVERING. ``update(status, now)`` returns True
+    exactly once per hover episode, at the moment the gate lifts,
+    so the caller can log it once; ``is_stable(now)`` is the gate
+    itself. Pure state, no I/O — the wiring tests drive it
+    directly. No retries anywhere: djitellopy already retries 4x,
+    and the autopilot issues at most one command per tick.
+    """
+
+    def __init__(self, stable_s=5.0):
+        self.stable_s = float(stable_s)
+        self._since = None
+        self._lifted = False
+
+    def update(self, status, now):
+        """Feed the current controller status; True only on the tick
+        the gate lifts (once per continuous HOVERING episode)."""
+        if status != "HOVERING":
+            self._since = None
+            self._lifted = False
+            return False
+        if self._since is None:
+            self._since = float(now)
+        if not self._lifted and float(now) - self._since >= self.stable_s:
+            self._lifted = True
+            return True
+        return False
+
+    def is_stable(self, now):
+        """True once the controller has hovered continuously for
+        ``stable_s``; False before that, or after any interruption."""
+        return (self._since is not None
+                and float(now) - self._since >= self.stable_s)
+
+
+def dispatch_drone_key(key, flight_ctrl, autopilot=None, ctx=None):
     """Map one keyboard key to a flight command. Returns True if the key
     was a flight key, False otherwise (unknown key / no key / no drone).
 
@@ -906,27 +1136,57 @@ def dispatch_drone_key(key, flight_ctrl):
     crashed; the window went away and keys stopped working). Closing
     the window is now done with its X button (the caller watches for
     it); Ctrl+C in the console is the full exit and lands the drone.
+
+    Autonomous mode (2026-11-25): U toggles the autopilot — starting
+    it WITH the current ctx, so the start gate enforces HOVERING +
+    tracking_valid (which requires VIO init, which requires the floor
+    gate: take off facing the room with the floor visible in the
+    lower frame). Any manual key (W/S/A/D/I/K/J/L/Q/T/E) while the
+    autopilot is running stops it FIRST, then runs the manual
+    command — the human always takes over. ``autopilot`` / ``ctx``
+    are optional so the old two-argument callers (and tests) keep
+    working; with no autopilot wired, U does nothing.
     """
     tello = getattr(flight_ctrl, "tello", None)
     if tello is None:
         return False
+    if key == ord("u"):  # Autopilot toggle
+        if autopilot is None:
+            return False
+        if getattr(autopilot, "state", "OFF") == "OFF":
+            if autopilot.start(ctx) is False:
+                log.warning("Autopilot did not start: %s",
+                            getattr(autopilot, "message", ""))
+            else:
+                log.info("Autopilot started (%s)",
+                         getattr(autopilot, "message", ""))
+        else:
+            autopilot.stop()
+            log.info("Autopilot stopped by U key")
+        return True
+    if key in _MANUAL_KEYS and autopilot is not None and \
+            getattr(autopilot, "state", "OFF") != "OFF":
+        # Manual takeover: stop autonomous flight FIRST, then run
+        # the manual command below.
+        autopilot.stop()
+        log.info("Manual key pressed — autopilot stopped, manual control")
     if key in (ord("q"), ord("t")):  # Takeoff
         flight_ctrl.send_command("takeoff", tello.takeoff)
     elif key == ord("e"):  # Land
         flight_ctrl.send_command("land", tello.land)
-    elif key in (ord("w"), 82):  # W / Forward
-        flight_ctrl.send_command("forward 30", tello.move_forward, 30)
+    elif key in (ord("w"), 82):  # W / Forward (20 cm steps)
+        flight_ctrl.send_command("forward 20", tello.move_forward, 20)
     elif key in (ord("s"), 84):  # S / Back
-        flight_ctrl.send_command("back 30", tello.move_back, 30)
+        flight_ctrl.send_command("back 20", tello.move_back, 20)
     elif key in (ord("a"), 81):  # A / Left
-        flight_ctrl.send_command("left 30", tello.move_left, 30)
+        flight_ctrl.send_command("left 20", tello.move_left, 20)
     elif key in (ord("d"), 83):  # D / Right
-        flight_ctrl.send_command("right 30", tello.move_right, 30)
+        flight_ctrl.send_command("right 20", tello.move_right, 20)
     elif key == ord("i"):  # Up
-        flight_ctrl.send_command("up 30", tello.move_up, 30)
+        flight_ctrl.send_command("up 20", tello.move_up, 20)
     elif key == ord("k"):  # Down
-        flight_ctrl.send_command("down 30", tello.move_down, 30)
-    elif key == ord("j"):  # Rotate Left
+        flight_ctrl.send_command("down 20", tello.move_down, 20)
+    elif key == ord("j"):  # Rotate Left (turns stay 30 deg)
         flight_ctrl.send_command("turn_left 30", tello.rotate_counter_clockwise, 30)
     elif key == ord("l"):  # Rotate Right
         flight_ctrl.send_command("turn_right 30", tello.rotate_clockwise, 30)
@@ -936,7 +1196,8 @@ def dispatch_drone_key(key, flight_ctrl):
 
 
 def format_status_line(battery, flight_status, bridge_valid, vio_diag,
-                       vio_initialized, n_frames):
+                       vio_initialized, n_frames, auto_state=None,
+                       height_cm=None):
     """One-line console status for the live loop (~1 per 5 s).
 
     Battery % over time is the record the 2026-11-25 self-landing
@@ -947,6 +1208,10 @@ def format_status_line(battery, flight_status, bridge_valid, vio_diag,
     light — but the % trace shows whether the battery was sagging
     when it happened. Pure function (no I/O) so the tests can check
     the exact wording.
+
+    ``auto_state`` / ``height_cm`` are additive only: when both are
+    None the line is exactly the old format (existing tests); when
+    given, ``auto=<state>`` and ``height=<cm>cm`` are appended.
     """
     if battery == "" or battery is None:
         bat = "—"
@@ -966,7 +1231,9 @@ def format_status_line(battery, flight_status, bridge_valid, vio_diag,
         vio_s = (f"uninit init={reason} tracked={tracked} "
                  f"inliers={inliers} kf_age={kf_age}f")
     return (f"STATUS bat={bat} flight={flight_status} bridge={bridge} "
-            f"vio={vio_s} frames={n_frames}")
+            f"vio={vio_s} frames={n_frames}"
+            + (f" auto={auto_state}" if auto_state is not None else "")
+            + (f" height={height_cm}cm" if height_cm is not None else ""))
 
 
 def maybe_reset_vio_at_takeoff(vio, prev_status, status, start_pose):
@@ -1050,6 +1317,13 @@ def main(argv=None):
     from server.geometry import COCO_EDGES
     import cv2
 
+    # Autonomous mode components (2026-11-25): wired here only, in
+    # the live path — the virtual entry point is untouched.
+    from server.autopilot import Autopilot
+    from server.doorway import DoorwayDetector
+    from server.map_store import load_map, save_map, try_relocalise
+    from server.recorder import RunRecorder, attach_file_log, new_run_dir
+
     def draw_drone_detections(frame, detections):
         vis = frame.copy()
         for det in detections:
@@ -1084,6 +1358,31 @@ def main(argv=None):
 
     flight_ctrl = SafeFlightController(getattr(source, "tello", None))
 
+    # --- Autonomous mode: ONE of each, created at server start ---
+    # Doorway detector (cheap; the loop throttles it), autopilot
+    # (drives through flight_ctrl, resolved via its .tello), run
+    # recorder + file log (one timestamped run dir per server start).
+    doorway_detector = DoorwayDetector()
+    autopilot = Autopilot(flight_ctrl)
+    state.autopilot = autopilot  # so /api/autopilot/stop can reach it
+    run_dir = new_run_dir()
+    file_handler = attach_file_log(run_dir / "server.log")
+    recorder = RunRecorder(run_dir, fps=5)
+    recorder.start()
+    log.info("Autonomous mode ready: run dir %s (video + server.log)",
+             run_dir)
+    # Saved map: only valid from the SAME takeoff spot (see
+    # docs/AUTONOMOUS_MODE.md). Missing / corrupt -> no saved map,
+    # never a crash at startup.
+    try:
+        saved_map = load_map()
+        log.info("Loaded saved map: %d points (%d with descriptors)",
+                 len(saved_map), saved_map.n_descriptors)
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        log.info("no saved map (%s) — starting without relocalisation",
+                 exc)
+        saved_map = None
+
     def pipeline_loop():
         nonlocal vio, show_drone_window
         t0 = time.monotonic()
@@ -1091,6 +1390,13 @@ def main(argv=None):
         last_status_t = time.monotonic()
         prev_flight_status = flight_ctrl.status
         last_battery = ""
+        # Autonomous-mode throttle state (monotonic seconds).
+        last_doorway_t = 0.0      # detector: at most every ~0.4 s
+        last_doorway = None       # last detection, held between runs
+        last_relocalise_t = 0.0   # saved-map retry: at most every ~2 s
+        last_height_t = 0.0       # height read: at most every ~1 s
+        height_cm = None
+        hover_gate = HoverGate()  # no tick until 5 s stable hover
         while not stop.is_set():
             if not state.running:
                 state.mark_paused()
@@ -1131,6 +1437,73 @@ def main(argv=None):
             maybe_reset_vio_at_takeoff(vio, prev_flight_status,
                                        flight_ctrl.status, src_pose)
             prev_flight_status = flight_ctrl.status
+            # --- Autonomous mode: one tick per iteration ---
+            # Doorway detector: only while the autopilot is in a
+            # doorway-seeking state, at most every ~0.4 s. Between
+            # runs the last detection is held (passing None on a
+            # throttled tick would make AIM drop back to SCAN every
+            # other frame); outside those states the ctx gets None.
+            now_mono = time.monotonic()
+            if autopilot.state in ("SCAN", "AIM", "APPROACH", "PASS"):
+                if now_mono - last_doorway_t >= 0.4:
+                    last_doorway_t = now_mono
+                    try:
+                        last_doorway = doorway_detector.detect(frame)
+                    except Exception as exc:
+                        log.debug("Doorway detection failed: %s", exc)
+                        last_doorway = None
+                doorway = last_doorway
+            else:
+                doorway = None
+            battery_pct = meta.get("battery", "")
+            ctx = build_auto_context(
+                tracking_valid, info.get("bridge_valid", False),
+                battery_pct, doorway,
+                getattr(pipeline, "last_detections", []), t)
+            # Hover-stable gate (2026-11-25): never send the first
+            # move until the hover is stable. The gate lifts only
+            # after 5 s of continuous HOVERING, and resets whenever
+            # the status leaves HOVERING. Until it lifts, no tick
+            # is issued at all — the autopilot waits, it never
+            # moves. Logged once, when the gate lifts while the
+            # autopilot is running.
+            if hover_gate.update(flight_ctrl.status, now_mono) and \
+                    autopilot.state != "OFF":
+                log.info("hover stable 5 s — autopilot live")
+            # Not-joystick hard stop BEFORE the tick: a rejected
+            # command means the drone is not accepting commands —
+            # no further moves while that is true.
+            if not check_not_joystick_stop(flight_ctrl, autopilot, state):
+                if hover_gate.is_stable(now_mono):
+                    autopilot.tick(ctx)
+            # Saved-map relocalisation: only while tracking is lost,
+            # at most once per ~2 s, never per frame (~100 ms each).
+            if (not tracking_valid and saved_map is not None
+                    and vio is not None and vio != "pending"
+                    and now_mono - last_relocalise_t >= 2.0):
+                last_relocalise_t = now_mono
+                diag = {}
+                try:
+                    if try_relocalise(vio, frame, saved_map, diag):
+                        log.info("relocalised against saved map "
+                                 "(%s PnP inliers)",
+                                 diag.get("inliers", "?"))
+                except Exception as exc:  # try_relocalise never
+                    # raises; this is belt-and-braces for the loop.
+                    log.debug("relocalisation attempt failed: %s", exc)
+            # Drone height (guarded; throttled to ~1 s): a LANDED
+            # status with height > 0 is visible as still-airborne.
+            if now_mono - last_height_t >= 1.0:
+                last_height_t = now_mono
+                try:
+                    h = (flight_ctrl.tello.get_height()
+                         if flight_ctrl.tello is not None else None)
+                    if h is not None:
+                        height_cm = int(h)
+                except Exception:
+                    pass  # keep the last good height, never blank it
+            state.update_auto(autopilot.state, autopilot.message,
+                              height_cm)
             # Periodic console status (about one line per 5 s, never
             # per frame): battery % over time (a sag under load shows
             # up here), bridge/tracking state, VIO state + numbers,
@@ -1147,7 +1520,8 @@ def main(argv=None):
                 log.info("%s", format_status_line(
                     last_battery, flight_ctrl.status,
                     info.get("bridge_valid", False), vio_diag,
-                    bool(getattr(vio, "initialized", False)), n_frames))
+                    bool(getattr(vio, "initialized", False)), n_frames,
+                    auto_state=autopilot.state, height_cm=height_cm))
 
             if show_drone_window:
                 try:
@@ -1169,12 +1543,14 @@ def main(argv=None):
 
                     # HUD Bottom Bar: Key prompt
                     cv2.rectangle(vis, (0, vis.shape[0] - 28), (vis.shape[1], vis.shape[0]), (20, 20, 20), -1)
-                    cv2.putText(vis, "[T/Q] Takeoff  [E] Land  [W/S/A/D] Move 30cm  [I/K] Up/Down  [J/L] Turn",
+                    cv2.putText(vis, "[T/Q] Takeoff  [E] Land  [W/S/A/D] Move 20cm  [I/K] Up/Down  [J/L] Turn  [U] Auto",
                                 (10, vis.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (230, 230, 230), 1)
 
+                    # Flight recorder: annotated frame, non-blocking.
+                    recorder.write_frame(vis)
                     cv2.imshow("Tello Drone Camera (Live Detection View)", vis)
                     key = cv2.waitKey(1) & 0xFF
-                    dispatch_drone_key(key, flight_ctrl)
+                    dispatch_drone_key(key, flight_ctrl, autopilot, ctx)
                     # Closing the window with its X button hides it (the
                     # old Q key did this; Q is takeoff now, 2026-11-25).
                     # The server keeps running either way.
@@ -1202,6 +1578,32 @@ def main(argv=None):
         pass
     finally:
         stop.set()
+        # Autonomous-mode shutdown (guarded: never crash the exit):
+        # stop the autopilot, flush the flight video, save the VIO
+        # map for the next run from this same takeoff spot, then
+        # close the run's file log.
+        try:
+            autopilot.stop()
+        except Exception:
+            pass
+        try:
+            recorder.stop()
+            log.info("Flight recording stopped: %d frames written, "
+                     "%d dropped -> %s", recorder.frames_written,
+                     recorder.frames_dropped, recorder.video_path)
+        except Exception as exc:
+            log.warning("Recorder stop failed: %s", exc)
+        try:
+            if vio is not None and vio != "pending" and \
+                    getattr(vio, "initialized", False):
+                n_saved = save_map(None, vio)
+                if n_saved:
+                    log.info("Saved map: %d points -> maps/latest.npz "
+                             "(valid only from this same takeoff spot)",
+                             n_saved)
+        except Exception as exc:
+            log.warning("Saving the map failed (run still ends "
+                        "cleanly): %s", exc)
         try:
             cv2.destroyAllWindows()
         except Exception:
@@ -1227,6 +1629,11 @@ def main(argv=None):
                             "from the Tello app.")
         source.close()
         pipeline.shutdown()
+        try:
+            logging.getLogger().removeHandler(file_handler)
+            file_handler.close()
+        except Exception:
+            pass
     return 0
 
 

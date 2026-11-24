@@ -710,7 +710,7 @@ def test_key_j_turns_left_and_moves():
                       (ord("a"), "move_left"), (ord("d"), "move_right"),
                       (ord("i"), "move_up"), (ord("k"), "move_down")):
         assert dispatch_drone_key(key, ctrl) is True
-        assert wait_until(lambda n=name: (n, (30,)) in fake.calls,
+        assert wait_until(lambda n=name: (n, (20,)) in fake.calls,
                           timeout=3.0), \
             f"{name} not sent for key {chr(key)}"
         assert wait_idle(ctrl)

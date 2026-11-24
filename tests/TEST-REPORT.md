@@ -1754,3 +1754,226 @@ ONE flight controller now, theirs, reviewed on its merits and kept.
   keep feeding lost frames — returns normally on every frame with
   no marker and bridge invalid. Full 27-scenario suite not
   re-run: live-path only.
+
+## Autonomous mode (2026-11-25, Tello only, laptop CPU only)
+
+Built on the user's order ("no bigger drone, make THIS one the best,
+whatever is possible"): the drone flies itself — take off, scan the
+room, find the doorway, fly through it into the other room, find the
+person, and the phone shows the skeleton marker through the wall.
+Five components plus one wiring pass; `server/main.py` had exactly one
+writer for the wiring. Nothing was pushed yet (report only).
+
+### Doorway detection (`server/doorway.py`, new)
+
+OpenCV only, no ML: downscale to 480 px wide, grayscale, Gaussian
+blur, Canny (50/150), HoughLinesP; keep near-vertical segments spanning
+>= 50% of frame height, merge collinear segments into jambs (15 px
+x-tolerance), pair jambs whose width is 8-55% of frame width with >= 60%
+vertical overlap and similar height. Returns a `Doorway` (centre-x,
+width, left/right x in original-frame pixels, confidence 0..1) or None
+honestly. Confidence = 0.5*jamb-length + 0.25*length-symmetry +
+0.25*width/height plausibility (ideal ratio ~0.45). Degenerate inputs
+return None, never crash. ~4.2 ms per `detect()` on a realistic
+textured 960x720 frame (~95 ms worst case on pure noise). `tests/
+test_doorway.py`: 9 tests — synthetic door found (centre 460.3 vs truth
+460, width 320.6 vs 320, confidence 0.90), second door position/size,
+plain textured wall -> None, blank frame -> None, poster-sized
+rectangle rejected, door half at the frame edge -> plausible centre, no
+crash, single jamb -> None, degenerate frames -> None, standalone
+import (does not load `server.main`). Limits: edge-only, no semantics —
+a floor-to-ceiling window or a tall bookshelf/cabinet edge pair can
+fool it; low-contrast jambs (same-colour trim, poor light, motion
+blur) return None rather than a guess; width is pixels only, no
+depth/scale check (the autopilot must combine it with distance); one
+jamb visible = None.
+
+### Autopilot (`server/autopilot.py`, new)
+
+Tick-driven, non-blocking state machine; duck-typed controller
+(`.status`, `.send_command(name, func, *args)`); mover resolved from
+an explicit mapping first, else `controller.tello` methods. States:
+OFF, SCAN, AIM, APPROACH, PASS, SEARCH, TRACK, HOLD, NODOOR, LANDING,
+DONE. SCAN yaws 30 deg with pauses (doorway checked before the pause
+expires); AIM centres the doorway (60 px tolerance); APPROACH takes
+20 cm forward steps, re-centring on drift, commits to PASS at doorway
+width >= 400 px or after 10 steps; PASS takes exactly 3 x 20 cm steps
+ignoring a lost doorway, then SEARCH; SEARCH slow yaw scan, person ->
+TRACK; TRACK hovers, yawing only when the person nears a frame edge
+(120 px), person lost -> SEARCH. `tests/test_autopilot.py`: 17 tests
+— all state transitions with scripted inputs, safety stop on tracking
+loss (no move while lost, resume after recovery), battery < 25 lands
+once, no doorway after a full 360 scan -> NODOOR with no wandering,
+stop() halts with no further moves, tick never blocks.
+
+### Autopilot safety patch (same files, 2026-11-25, from the 04:03 video run)
+
+The 04:03 run: takeoff OK at 80%, drone hovered ~12-15 s swinging
+between the user and the blanket on its own, then landed itself at 77%
+— NOT a battery landing. The blanket was hand-held and moving, the
+room dim; a moving surface confuses the downward vision sensor. Two
+rules added: (1) self-landing is a stop condition — controller LANDED
+or LANDING while in any flying state (including HOLD) -> DONE with
+"landed — autopilot stopped", no further moves, never resumes or
+re-takeoffs on its own; (2) start gate — `start(ctx=None)`: with a ctx,
+refuses unless HOVERING ("cannot start: not hovering") and tracking
+valid ("cannot start: no tracking"); without a ctx, old behaviour, and
+the first tick without tracking holds immediately with no move. No
+oscillation detector or fabric sensor was invented (the Tello has no
+forward depth sensing; keeping clear of fabric and keeping the scene
+still are setup rules). `tests/test_autopilot.py` extended to 25 tests
+(8 new).
+
+### Saved-map relocalisation (`server/map_store.py`, new; `server/vio.py` +~150 lines, two methods only)
+
+`save_map(path, vio) -> int` (points saved; empty map writes nothing),
+`load_map(path=None) -> MapData` (default `<repo>/maps/latest.npz`;
+raises FileNotFoundError/ValueError), `try_relocalise(vio, frame,
+map_data, diag=None) -> bool` (never raises; ORB + RANSAC PnP ~100 ms;
+call only on tracking loss). `vio.py` gained `export_map_data()`
+(consolidates the distributed map, deduplicated by persistent point
+ID, newest/BA-refined observation wins; fills missing live-point
+descriptors from the keyframe gray at save time only) and
+`adopt_saved_map_pose(...)` (marks the VIO initialised from a saved
+map and delegates to the existing `_adopt_recovered`). No tracking,
+threshold, or init-path changes. Matching uses the VIO's own
+`_solve_pnp` (yaw1dof chain + full fallback, same 3 px threshold,
+same accept gate), seeded from the reference keyframe pose then up to
+2 older keyframes; a `cv2.solvePnPRansac` fallback with cheirality
+check exists only for duck-typed VIO stand-ins. `tests/
+test_relocalisation.py`: 10 tests with a self-contained synthetic-room
+renderer — save/load round-trip bit-for-bit on points/descriptors/IDs/
+K/poses (driven map: 660 points, 79 with descriptors, 2 keyframes);
+same-view relocalisation True, 30 inliers from 37 matches, recovered
+pose 0.015 m from the VIO's own map-frame estimate (asserted at
+0.35 m), tracking resumes on the next frame; shifted view (+0.3 m,
++8 deg yaw) True, 17 inliers, 0.053 m error; different scene False, 8
+matches, VIO state byte-identical; fresh VIO relocalising against
+another VIO's saved map True, 0.015 m error (server-restart path
+works). Viewpoint sweep (probe): translation OK to +0.5 m, fails at
++0.8 m; yaw OK to +25 deg, fails at +40 deg; combined +0.5 m / +15 deg
+OK. Limits: pose is recovered in the map frame, not ground truth (the
+VIO's init scale is stretched ~1.4x in x on the synthetic flight, so
+the map frame sits ~0.67 m from truth at frame 10 — VIO scale drift,
+not relocalisation error); descriptor coverage is thin (79/660 points
+carry a usable ORB descriptor); one map per takeoff spot, no spot key
+(`maps/latest.npz` is overwritten on every save — a stale map from
+another spot would place the drone in the wrong world frame with a
+passing PnP gate).
+
+### Flight recorder (`server/recorder.py`, new)
+
+`new_run_dir(base_dir=None)` -> `<base>/runs/<YYYY-MM-DD_HH-MM-SS>/`
+(same-second collisions get -1, -2, ... suffixes);
+`RunRecorder(run_dir, fps=5, max_queue=30)` — background writer thread
+owns the `cv2.VideoWriter` (mp4v, `video.mp4`); `write_frame(frame)`
+is non-blocking (bounded queue, drops when full, never raises, never
+blocks the caller); `stop(timeout=10.0)` drains and closes, idempotent;
+`frames_written` / `frames_dropped` counters. `attach_file_log(path)`
+attaches an INFO+ FileHandler (same format as the console) to the root
+logger, deduplicated per path. `tests/test_recorder.py`: 9 tests — 20
+frames -> video exists, non-empty, ~20 frames readable; slow-writer
+test proves `write_frame` returns in < 1 s total with frames dropped;
+write-before-start drops fast with no video; run-dir timestamp format
+and uniqueness; file-log writes a line and returns the same handler on
+a second call; bad frames (None, str, int, 1-D, empty, float32, wrong
+size) never raise. Limits: no video file if no frames ever arrive;
+video size is fixed by the first frame (resolution change mid-run
+drops later frames); queue bound is frames, not bytes (~80 MB worst
+case at 720p if the writer stalls completely).
+
+### Wiring (`server/main.py` only; `tests/test_live_fixes.py` step expectations; new `tests/test_wiring.py`; new `docs/AUTONOMOUS_MODE.md`)
+
+- 20 cm steps: `dispatch_drone_key` sends `"forward 20"` etc. with
+  distance 20; turns stay 30 deg. HUD reads `Move 20cm … [U] Auto`.
+- Startup: one `DoorwayDetector()`, one `Autopilot(flight_ctrl)`,
+  `new_run_dir()` + `attach_file_log(run_dir/"server.log")` +
+  `RunRecorder(run_dir, fps=5)` started; saved map loaded at startup
+  (missing/corrupt -> log `no saved map`, continue with None).
+- Per-iteration tick after `live_pose_step`/`process_frame`:
+  `build_auto_context` from live values (tracking, bridge, battery,
+  throttled doorway, max-confidence detection's bbox centre-x or
+  None); doorway detector runs only in SCAN/AIM/APPROACH/PASS and at
+  most every ~0.4 s, last detection held between runs.
+- U key toggles (`dispatch_drone_key(key, flight_ctrl, autopilot=None,
+  ctx=None)`): OFF -> `autopilot.start(ctx)` so the gate enforces
+  HOVERING + tracking_valid; running -> `stop()`. Any manual key
+  (W/S/A/D/I/K/J/L/Q/T/E plus arrows) while running calls
+  `autopilot.stop()` FIRST, then executes. Old two-arg callers still
+  work; U with no autopilot returns False.
+- Hover-stable gate (`HoverGate`): `tick()` is not called until the
+  controller has been continuously HOVERING for 5 s; the timer resets
+  whenever status leaves HOVERING; the loop logs `hover stable 5 s —
+  autopilot live` once per hover episode (only when the autopilot is
+  running). No retry logic added anywhere.
+- Not-joystick hard stop: `SafeFlightController.last_reject` (None
+  normally; cleared at each worker start; `"not-joystick"` on a
+  Not-joystick error, else the lowercased error) — additive only, the
+  existing reset to LANDED and the ground watchdog are untouched.
+  Loop-side `check_not_joystick_stop` runs before the tick: running
+  autopilot + `last_reject == "not-joystick"` -> `stop()`, log, and
+  the operator page shows it. Message (`NOT_JOYSTICK_MESSAGE`):
+  "Commands rejected ('error Not joystick') — reset the drone (hold
+  power 5 s until yellow flash) and try again. Secondary check:
+  force-close the Tello app completely (swipe it away from the app
+  switcher)." The app is ruled out for the 04:06 run (never opened
+  that day; DJITelloPy issue #201, also in pure SDK scripts), so the
+  factory reset is the primary message.
+- Relocalisation: on tracking loss with a loaded map,
+  `try_relocalise(vio, frame, saved_map, diag)` throttled to ~2 s;
+  success logs `relocalised against saved map (<n> PnP inliers)`. At
+  shutdown, `save_map(None, vio)` if VIO initialised, guarded, logs
+  points saved.
+- Recorder: `recorder.write_frame(vis)` in the `show_drone_window`
+  block after `vis` is drawn; shutdown stops it, logs frames
+  written/dropped, removes/closes the file-log handler. Note: the
+  recorder only writes while the drone window is open.
+- Operator page: `/api/status` carries `auto_state`, `auto_message`,
+  `height_cm`, `not_joystick`; the page shows Auto + Height lines and
+  a red Not-joystick banner, and a Stop autopilot button POSTs to
+  `/api/autopilot/stop` (same POST pattern as `/api/control`). Height
+  is a guarded `tello.get_height()`, throttled to ~1 s, last good value
+  kept on failure — LANDED with height > 0 reads as still-airborne.
+  BRIDGE/DRONE/PERSON blocks intact.
+- STATUS line: `format_status_line(..., auto_state=None,
+  height_cm=None)` — byte-identical old format when both are None,
+  otherwise appends `auto=<state>` and `height=<cm>cm`.
+- `tests/test_wiring.py`: 16 tests — U toggles on/off, manual key
+  stops autopilot before executing, Not-joystick rejection sets
+  `last_reject` and the loop-side check stops the autopilot, 20 cm
+  step in dispatch, relocalise/save/load wiring via fakes.
+
+### Measured verification (2026-11-25)
+
+`~/workspace/tello-search/.venv/bin/python -m pytest tests/test_live_fixes.py tests/test_doorway.py tests/test_autopilot.py tests/test_relocalisation.py tests/test_recorder.py tests/test_wiring.py -q` -> **101 passed** (32 + 9 + 25 + 10 + 9 + 16). Full 27-scenario virtual suite not re-run: live-path only. Nothing pushed yet.
+
+### Gating dependency (stated plainly)
+
+The command path is the gating dependency: the autopilot cannot fly
+at all until the Not-joystick rejections are resolved. In the 04:06
+run (no blanket) every move was rejected with 'error Not joystick'
+while the battery stayed 72%; the drone drifted right uncontrolled for
+~13 s and came down on a cabinet by itself. VIO never initialised in
+that run: first low-displacement, then few-floor-points (floor_pts=0/8
+— the camera faced the wall, the floor was not visible in the lower
+frame), then few-tracked as the keyframe went stale (kf_age up to
+143f); bridge invalid throughout. First thing to try is the factory
+reset; the hover-stable gate also exists because commands sent too fast
+while the drone is not ready are a reported cause. Manual flight is
+blocked the same way — this is not an autopilot-only problem.
+
+### What is live-testable in one room vs what needs a real doorway
+
+One room (blanket as the wall, no second room free, no real doorway):
+SCAN / SEARCH / TRACK states, the safety holds (tracking loss,
+self-landing, Not-joystick, low battery), the start gate, the 5 s
+hover gate, the 20 cm steps, relocalisation against the saved map,
+recording. Needs a real doorway: AIM / APPROACH / PASS and the full
+doorway flight — unit-tested only, never flown. Setup rules that
+decide whether any of it works live: force-close the Tello app
+completely (locking the phone is not enough — a background app can
+steal the controls back mid-flight), take off facing the room with the
+floor visible in the lower frame and good light, pin the blanket still
+(never hand-held) and keep the drone clear of fabric, and remember the
+saved map is only valid from the same takeoff spot. See
+`docs/AUTONOMOUS_MODE.md`.

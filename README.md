@@ -617,3 +617,64 @@ tools/make_cert.sh  self-signed cert for iPhone HTTPS on LAN
   now skipped in the association (never matched), so
   `process_frame` returns normally with tracking lost.
   `tests/test_live_fixes.py` extended to 32 tests, all PASS.
+
+## Autonomous mode (2026-11-25, Tello only, laptop CPU only)
+
+The drone flies itself — no bigger drone. Press **U** to toggle auto mode
+(the key is shown in the HUD: `[U] Auto`). The autopilot is a state
+machine in `server/autopilot.py`: SCAN (yaw in 30 deg steps, looking for
+a doorway) -> AIM (centre the doorway) -> APPROACH (20 cm forward steps)
+-> PASS (3 x 20 cm steps through the doorway) -> SEARCH (yaw scan for
+the person in the other room) -> TRACK (hover, keep the person centred,
+marker stays live). Doorway detection is OpenCV only
+(`server/doorway.py`: two tall vertical jambs; ~4 ms/frame, called at
+most every ~0.4 s in SCAN/AIM/APPROACH/PASS, returns None honestly when
+no doorway is visible). Any manual movement/takeoff/land key, or the
+Stop button on `/operator`, takes over immediately and stops the
+autopilot.
+
+Safety rules (hard, never fly blind): tracking lost -> HOLD (no moves,
+resume when tracking recovers); battery < 25% -> land once; no doorway
+after a full 360 deg scan -> NODOOR, hover and report, do not wander;
+self-landing (controller LANDED while in a flying state) -> DONE, never
+re-takeoff on its own; `start()` refuses unless HOVERING with tracking
+valid. First move waits until the hover has been stable for 5 s after
+takeoff (`HoverGate` in `server/main.py`); no retries are added anywhere
+(djitellopy already retries 4x).
+
+Saved-map relocalisation (`server/map_store.py`, `maps/latest.npz`):
+the VIO's sparse map is saved at run end and loaded at startup; when
+tracking is lost, `try_relocalise` matches the frame against the saved
+map (ORB + PnP through the VIO's own solver) and restores the pose.
+Same-view recovery measured 30 inliers, 0.015 m error; tolerates about
++-0.5 m / +-25 deg of viewpoint change. A saved map is only valid from
+the same takeoff spot — one `latest.npz`, overwritten on every save.
+
+Flight recording (`server/recorder.py`): every run auto-saves the
+annotated drone video (`video.mp4`) and the console log (`server.log`)
+into `runs/<timestamp>/`, written by a background thread with a bounded
+queue that drops frames rather than slowing the loop.
+
+Move step is now **20 cm** (was 30 cm) for keyboard and autopilot
+moves — the 03:37 live log showed 185-361 px/frame during fast moves
+vs the LK pyramid's ~50-150 px range. Turns stay 30 deg.
+
+GATING DEPENDENCY — the command path: the autopilot cannot fly at all
+until the 'Not joystick' rejections are resolved. In the 04:06 run
+every move was rejected with 'error Not joystick' while the Tello app
+was never opened (known DJITelloPy issue #201, also in pure SDK
+scripts); the drone drifted and came down on a cabinet with the battery
+at 72%. The hard stop reports: reset the drone (hold power 5 s until
+yellow flash) and try again. Force-closing the app completely is a
+secondary check only. See `docs/AUTONOMOUS_MODE.md` for the operator
+note (states, safety rules, setup rules).
+
+What is live-testable in one room (blanket as the wall, no second
+room, no real doorway): SCAN / SEARCH / TRACK states, the safety
+holds, the start gate, the 20 cm steps, relocalisation, recording.
+What needs a real doorway: AIM / APPROACH / PASS and the full
+doorway flight — unit-tested only, never flown. Tests: 101 live-path
+tests pass (`tests/test_live_fixes.py` 32, `test_doorway.py` 9,
+`test_autopilot.py` 25, `test_relocalisation.py` 10,
+`test_recorder.py` 9, `test_wiring.py` 16). Full 27-scenario virtual
+suite not re-run: live-path only.
