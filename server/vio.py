@@ -1086,6 +1086,11 @@ class MonocularVO:
         self._dr_start_t = None
         self._dr_dist_m = 0.0
         self._last_diag = {}
+        # Init-wait log throttle (see _log_init_wait): last reason
+        # logged and when, so a persistent init failure logs at most
+        # one line per 5 s instead of one per frame.
+        self._last_init_fail = None
+        self._last_init_fail_t = 0.0
 
     # -- public API ----------------------------------------------------------
 
@@ -1170,6 +1175,7 @@ class MonocularVO:
 
         if not self._initialized:
             pose, valid, diag = self._try_initialise(gray, diag)
+            self._log_init_wait(diag)
         elif self._lost:
             self._lost_frames += 1
             if self._lost_frames % RELOCALISE_EVERY == 1:
@@ -1432,36 +1438,55 @@ class MonocularVO:
         enough parallax + inliers triangulates and floor-scales.
         """
         tracked = self._track_lk(self._kf_gray, self._kf_pts, gray)
+        diag["init_kf_age_frames"] = self._n_frames - (
+            self._kf_frame if self._kf_frame is not None
+            else self._n_frames)
         if tracked[0] is None:
             diag["n_tracked"] = 0
+            diag["init_fail"] = "lk-empty"
             return self._external_pose(), False, diag
         pts_cur, pts_kf, _ = tracked
         diag["n_tracked"] = len(pts_cur)
         flow = np.linalg.norm(pts_cur - pts_kf, axis=1)
-        if len(pts_cur) < INIT_MIN_TRACKED or float(np.median(flow)) < INIT_MIN_DISPLACEMENT_PX:
+        diag["init_flow_px"] = float(np.median(flow)) if len(flow) else 0.0
+        if len(pts_cur) < INIT_MIN_TRACKED:
+            # Too few points survived LK from the keyframe — a
+            # feature-poor view, or a keyframe too stale to track
+            # from (live 2026-11-25: the keyframe was a pre-takeoff
+            # ground frame). Keep holding the start pose.
+            diag["init_fail"] = "few-tracked"
+            return self._external_pose(), False, diag
+        if diag["init_flow_px"] < INIT_MIN_DISPLACEMENT_PX:
             # Not enough parallax yet: keep holding the start pose.
+            diag["init_fail"] = "low-displacement"
             return self._external_pose(), False, diag
         try:
             E, mask = cv2.findEssentialMat(
                 pts_kf, pts_cur, self._Kmat, method=cv2.RANSAC,
                 prob=0.999, threshold=1.0)
         except cv2.error:
+            diag["init_fail"] = "essential-failed"
             return self._external_pose(), False, diag
         if E is None or mask is None:
+            diag["init_fail"] = "essential-failed"
             return self._external_pose(), False, diag
         inliers = mask.reshape(-1) == 1
         n_inliers = int(inliers.sum())
         diag["inliers"] = n_inliers
         if n_inliers < INIT_MIN_INLIERS:
+            diag["init_fail"] = "few-essential-inliers"
             return self._external_pose(), False, diag
         try:
             n_pose_inliers, R_rel, t_unit, mask_pose = cv2.recoverPose(
                 E, pts_kf[inliers], pts_cur[inliers], self._Kmat)
         except cv2.error:
+            diag["init_fail"] = "essential-failed"
             return self._external_pose(), False, diag
         # recoverPose's retval IS the inlier count; its mask is 0/255,
         # so never sum it as a count (that over-counts 255x).
+        diag["init_pose_inliers"] = int(n_pose_inliers)
         if n_pose_inliers < INIT_MIN_INLIERS:
+            diag["init_fail"] = "few-pose-inliers"
             return self._external_pose(), False, diag
         # Triangulate the inlier points with a UNIT baseline.
         R_kf, C_kf = self._kf_pose
@@ -1482,6 +1507,7 @@ class MonocularVO:
         z2 = pts_cam2[:, 2]
         ok = (z1 > 0) & (z2 > 0)
         if int(ok.sum()) < INIT_MIN_INLIERS:
+            diag["init_fail"] = "few-cheirality"
             return self._external_pose(), False, diag
         # Floor scale: keyframe pixels in the lower 40% of the image
         # are floor candidates. Their reconstructed world height in
@@ -1498,7 +1524,9 @@ class MonocularVO:
         # near half would leave fewer than 8.
         H = int(self.K["height"])
         floor = pts_kf[inliers][ok][:, 1] > FLOOR_PIXEL_V_FRAC * H
+        diag["init_floor_pts"] = int(floor.sum())
         if int(floor.sum()) < 8:
+            diag["init_fail"] = "few-floor-points"
             return self._external_pose(), False, diag
         floor_idx = np.nonzero(floor)[0]
         unit_depth = np.linalg.norm(pts_cam[ok][floor], axis=1)
@@ -1507,10 +1535,14 @@ class MonocularVO:
             floor_idx = floor_idx[near]
         pts_world_unit = (R_kf.T @ pts_cam[ok][floor_idx].T).T + C_kf
         y_unit = float(np.median(pts_world_unit[:, 1]))
+        diag["init_floor_y"] = y_unit
         if y_unit >= -0.05:  # floor must reconstruct below the camera
+            diag["init_fail"] = "floor-not-below"
             return self._external_pose(), False, diag
         scale = float(C_kf[1]) / (float(C_kf[1]) - y_unit)
         if not (INIT_BASELINE_RANGE_M[0] <= scale <= INIT_BASELINE_RANGE_M[1]):
+            diag["init_scale_candidate"] = scale
+            diag["init_fail"] = "scale-out-of-range"
             return self._external_pose(), False, diag
         # Compose the absolute current pose.
         R_cur = R_rel @ R_kf
@@ -1530,6 +1562,8 @@ class MonocularVO:
             (self._kf_frame, R_kf.copy(), C_kf.copy()),
             (self._n_frames, R_cur.copy(), C_cur.copy())]
         diag["init_scale_m"] = scale
+        diag["init_fail"] = None
+        self._last_init_fail = None
         self._prev_gray = gray
         self._prev_pts = pts_cur[inliers][ok]
         self._prev_pts3d = pts_world
@@ -1550,10 +1584,54 @@ class MonocularVO:
             "ids": self._prev_ids.copy(),
             "uv": self._prev_pts.copy(), "pts3d": pts_world.copy(),
             "des": None, "des_valid": None}]
-        log.info("VIO initialised at frame %d: %d inliers, baseline "
-                 "scale %.3f m (floor median y_unit %.2f)",
-                 self._n_frames, n_inliers, scale, y_unit)
+        log.info("VIO initialised at frame %d: E inliers=%d, pose "
+                 "inliers=%d, tracked=%d, baseline scale %.3f m "
+                 "(floor median y_unit %.2f)",
+                 self._n_frames, n_inliers, n_pose_inliers,
+                 len(pts_cur), scale, y_unit)
         return self._external_pose(), True, diag
+
+    def _log_init_wait(self, diag):
+        """One INFO line per init-failure transition (plus a repeat at
+        most every 5 s for a persistent failure) — never per frame.
+        The line carries the reason and the numbers, so the next live
+        run's log says WHY init is waiting instead of the viewer
+        just showing 'Tracking lost' (2026-11-25 black box)."""
+        reason = diag.get("init_fail")
+        if not reason:
+            return
+        now = time.monotonic()
+        if (reason == self._last_init_fail
+                and now - self._last_init_fail_t < 5.0):
+            return
+        self._last_init_fail = reason
+        self._last_init_fail_t = now
+        hints = {
+            "lk-empty": "no points tracked from the keyframe at all",
+            "few-tracked": "point the camera at a textured scene",
+            "low-displacement": "move sideways (translation), not just turn",
+            "essential-failed": "turning without translating gives no "
+                               "parallax -- move sideways",
+            "few-essential-inliers": "turning without translating gives "
+                                     "no parallax -- move sideways",
+            "few-pose-inliers": "turning without translating gives no "
+                                "parallax -- move sideways",
+            "few-cheirality": "too few points in front of both cameras "
+                              "-- move sideways",
+            "few-floor-points": "point the camera so the floor is "
+                                "visible in the lower frame",
+            "floor-not-below": "floor reconstructed above the camera -- "
+                               "check level flight at the takeoff height",
+            "scale-out-of-range": "baseline scale out of range -- check "
+                                  "the camera height",
+        }
+        log.info("VIO init waiting: %s (tracked=%d/%d flow=%.1fpx "
+                 "inliers=%d floor_pts=%s/8 kf_age=%sf) -- %s",
+                 reason, diag.get("n_tracked", 0), INIT_MIN_TRACKED,
+                 diag.get("init_flow_px", 0.0), diag.get("inliers", 0),
+                 diag.get("init_floor_pts", "?"),
+                 diag.get("init_kf_age_frames", "?"),
+                 hints.get(reason, ""))
 
     # -- tracking ------------------------------------------------------------
 
@@ -2518,8 +2596,11 @@ class MonocularVO:
         # purposes only if relocalisation can anchor on it — it cannot
         # (no pose), so keep _prev_* as they were and let
         # _try_relocalise anchor on the last GOOD frame instead.
-        log.warning("VIO tracking lost at frame %d (%s); bridge will "
-                    "invalidate (no guessed pose)", self._n_frames, reason)
+        log.warning("VIO tracking lost at frame %d (%s): tracked=%d "
+                    "inliers=%d map=%d; bridge will invalidate "
+                    "(no guessed pose)", self._n_frames, reason,
+                    diag.get("n_tracked", 0), diag.get("inliers", 0),
+                    diag.get("n_map", 0))
         return self._external_pose(), False, diag
 
     # -- relocalisation --------------------------------------------------------

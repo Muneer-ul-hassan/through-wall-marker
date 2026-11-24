@@ -594,3 +594,15 @@ tools/make_cert.sh  self-signed cert for iPhone HTTPS on LAN
   left; W/S/A/D/I/K unchanged. Dispatch is a tested function
   (`dispatch_drone_key`); the window closes with its X button.
   `tests/test_live_fixes.py` extended to 21 tests, all PASS.
+- VIO diagnostics + takeoff reset + ground watchdog from the
+  2026-11-25 live runs: the bridge never became valid because the
+  VIO keyframe was a pre-takeoff ground frame (~2.5 min stale);
+  takeoff now resets an uninitialised VIO so the keyframe is
+  airborne. Init failures log the reason with numbers; a 5 s
+  console status line carries battery % over time, bridge and VIO
+  state. The controller now watches the height while HOVERING and
+  resets to LANDED if the drone lands itself (low-battery failsafe,
+  blinking red), so [T] works again. `tests/test_live_fixes.py`
+  extended to 30 tests, all PASS. Battery note: ~2 min flights on
+  a full charge vs ~13 min healthy — the battery is worn; the %
+  trace will show any in-flight sag.

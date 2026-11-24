@@ -1662,3 +1662,58 @@ ONE flight controller now, theirs, reviewed on its merits and kept.
   (2026-11-25): Q and T take off, E lands, L turns right and never
   lands, J turns left, all six moves unchanged, unknown keys send
   nothing.
+
+### VIO diagnostics + takeoff reset + ground watchdog (BUG 5, 2026-11-25)
+
+- The finding: the bridge NEVER became valid in any live run.
+  Root cause, from the code + the 03:01 log: the VIO keyframe is the
+  FIRST frame the server processes — a pre-takeoff ground frame.
+  Server started serving 02:58:49, takeoff 03:01:23 (~155 s later).
+  `_try_initialise` LK-tracks from that keyframe on every frame,
+  with no prediction and no refresh; LK cannot survive the 1.3 m
+  rise plus turns, so init can never fire. The thresholds are NOT
+  the cause (40 tracked / 30 inliers / 15 px are harness-measured)
+  and were not moved. Secondary gates that can also block init in
+  this scene: the floor-scale step needs >= 8 floor points in the
+  lower 40% of the keyframe (a blanket filling the view fails it),
+  and pure rotation gives no parallax for the essential matrix.
+- Fix in `server/main.py`: `maybe_reset_vio_at_takeoff` — on the
+  LANDED→HOVERING transition, an uninitialised VIO is reset so the
+  next frame becomes an airborne keyframe at the known start pose.
+  A working bridge is never wiped; one reset per takeoff.
+- Diagnostics in `server/vio.py`: every init-failure path now sets
+  `diag["init_fail"]` with numbers (tracked, median flow, inliers,
+  floor points, keyframe age) and `_log_init_wait` logs one INFO
+  line per reason change (repeat at most every 5 s) with a plain
+  hint, e.g. 'VIO init waiting: few-tracked (tracked=18/40 ...) --
+  point the camera at a textured scene'. Init success logs the
+  numbers; `_declare_lost` logs tracked/inliers/map. Console status
+  line in the live loop (~1 per 5 s): battery %, flight status,
+  bridge, VIO state + numbers, frames processed — the battery %
+  over time proves (or rules out) a sag.
+- Ground watchdog in `SafeFlightController`: a daemon thread polls
+  the height every 0.5 s; HOVERING + height <= 10 cm for ~2 s
+  resets status to LANDED and logs that [T] works again. Never
+  fires while TAKING_OFF / MOVING / LANDING, never while the drone
+  is actually airborne, and failed height reads are skipped. (Why:
+  the drone lands itself on the low-battery failsafe — blinking red
+  — without telling us, so status stayed HOVERING and [T] was
+  ignored: 'Takeoff ignored: drone already HOVERING'.)
+- Battery note (2026-11-25): on a full charge the drone flies only
+  ~2 min before landing itself; a healthy Tello flies ~13 min. The
+  battery is worn/degraded — the likely cause of the self-landings.
+  The red light + shutdown is the drone's own fault/critical-battery
+  signal; this code cannot switch the drone off or change its light.
+  'No valid imu' appeared once in the logs — an IMU/system fault
+  remains a secondary candidate, but the 2-minute flights point at
+  the battery. The new battery % trace in the log will show the %
+  collapsing in flight if so.
+- `tests/test_live_fixes.py` extended to 30 tests, all PASS
+  (2026-11-25): status line carries battery/bridge/VIO numbers;
+  init-failure reasons (low-displacement on static frames, lk-empty
+  on blank frames) with one log line per transition; takeoff reset
+  fires once, never on a working bridge, and clears the stale
+  keyframe; watchdog resets a grounded drone and the next takeoff
+  is accepted, keeps an airborne drone hovering, never fires without
+  a height reading or while taking off. Full 27-scenario suite not
+  re-run: live-path only.

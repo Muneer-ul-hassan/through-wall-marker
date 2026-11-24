@@ -711,11 +711,79 @@ def run_server(state, viewer_path, host, port, use_https, cert, key):
 # for the two completions marked below (land idempotency, Not-joystick
 # guidance) -- there is ONE flight controller in this file.
 class SafeFlightController:
-    def __init__(self, tello):
+    def __init__(self, tello, poll_interval_s=0.5, ground_grace_s=2.0,
+                 ground_height_cm=10):
         self.tello = tello
         self.lock = threading.Lock()
         self.status = "LANDED"  # LANDED, TAKING_OFF, HOVERING, MOVING, LANDING
         self.last_action = "Ready"
+        # Ground watchdog (2026-11-25): the drone can land itself —
+        # low-battery failsafe, blinking red light — without telling
+        # us, so status stays HOVERING and [T] is ignored ("Takeoff
+        # ignored: drone already HOVERING"). A daemon thread polls
+        # the height while HOVERING; ~2 s near 0 cm means it is on
+        # the ground, so status resets to LANDED and [T] works again.
+        # It never fires while TAKING_OFF / MOVING / LANDING, and
+        # never resets while the drone is actually airborne (height
+        # clearly > 0). Only starts when the tello reports a height
+        # (djitellopy does; the test fakes without get_height do not).
+        self._wd_poll_s = float(poll_interval_s)
+        self._wd_grace_s = float(ground_grace_s)
+        self._wd_ground_cm = int(ground_height_cm)
+        self._wd_stop = threading.Event()
+        self._wd_ground_since = None
+        if tello is not None and getattr(tello, "get_height", None) is not None:
+            threading.Thread(target=self._ground_watchdog, daemon=True).start()
+
+    def _ground_watchdog(self):
+        """Poll the height; reset HOVERING -> LANDED when the drone
+        has been on the ground for ~2 s. Every height read is
+        guarded: a failed or missing read is skipped, never counted
+        toward the ground streak."""
+        while not self._wd_stop.is_set():
+            self._wd_stop.wait(self._wd_poll_s)
+            if self._wd_stop.is_set():
+                return
+            if self.status != "HOVERING":
+                self._wd_ground_since = None
+                continue
+            try:
+                height = self.tello.get_height()
+            except Exception:
+                self._wd_ground_since = None
+                continue
+            if height is None:
+                self._wd_ground_since = None
+                continue
+            try:
+                height = int(height)
+            except (TypeError, ValueError):
+                self._wd_ground_since = None
+                continue
+            if height > self._wd_ground_cm:
+                self._wd_ground_since = None
+                continue
+            now = time.monotonic()
+            if self._wd_ground_since is None:
+                self._wd_ground_since = now
+                continue
+            if now - self._wd_ground_since < self._wd_grace_s:
+                continue
+            # On the ground for ~2 s while HOVERING: re-check under
+            # the lock (a command may have started meanwhile) and
+            # reset so [T] works again.
+            if self.lock.acquire(blocking=False):
+                try:
+                    if self.status == "HOVERING":
+                        self.status = "LANDED"
+                        self.last_action = "Landed (ground watchdog)"
+                        log.info("Ground watchdog: drone is on the ground "
+                                 "(height %d cm) but status was HOVERING "
+                                 "-- status reset to LANDED, [T] works "
+                                 "again", height)
+                finally:
+                    self.lock.release()
+            self._wd_ground_since = None
 
     def send_command(self, cmd_name, func, *args):
         if not self.tello:
@@ -851,6 +919,60 @@ def dispatch_drone_key(key, flight_ctrl):
     return True
 
 
+def format_status_line(battery, flight_status, bridge_valid, vio_diag,
+                       vio_initialized, n_frames):
+    """One-line console status for the live loop (~1 per 5 s).
+
+    Battery % over time is the record the 2026-11-25 self-landing
+    needed: a degraded battery sags under load, so the % across
+    successive lines proves it (or rules it out) instead of a guess.
+    The drone's own red light + shutdown is its fault/critical-battery
+    signal — this code cannot switch the drone off or change its
+    light — but the % trace shows whether the battery was sagging
+    when it happened. Pure function (no I/O) so the tests can check
+    the exact wording.
+    """
+    if battery == "" or battery is None:
+        bat = "—"
+    else:
+        bat = f"{battery}%"
+    bridge = "valid" if bridge_valid else "invalid"
+    tracked = vio_diag.get("n_tracked", 0)
+    inliers = vio_diag.get("inliers", 0)
+    n_map = vio_diag.get("n_map", 0)
+    source = vio_diag.get("pose_source", "—")
+    if vio_initialized:
+        vio_s = (f"init pose={source} tracked={tracked} "
+                 f"inliers={inliers} map={n_map}")
+    else:
+        reason = vio_diag.get("init_fail") or "waiting"
+        kf_age = vio_diag.get("init_kf_age_frames", "—")
+        vio_s = (f"uninit init={reason} tracked={tracked} "
+                 f"inliers={inliers} kf_age={kf_age}f")
+    return (f"STATUS bat={bat} flight={flight_status} bridge={bridge} "
+            f"vio={vio_s} frames={n_frames}")
+
+
+def maybe_reset_vio_at_takeoff(vio, prev_status, status, start_pose):
+    """Reset the VIO when the drone takes off (once per takeoff), so
+    the keyframe is an airborne frame at the known start pose — not
+    the pre-takeoff ground frame the server started with. Live
+    2026-11-25: the keyframe was ~2.5 min stale (server started
+    02:58:49, takeoff 03:01:23) and LK from it cannot survive the
+    1.3 m rise, so init could never fire in any run. Only resets
+    while the VIO is uninitialised; a working bridge is never wiped.
+    Returns True if a reset happened. The caller keeps prev_status.
+    """
+    if (status == "HOVERING" and prev_status != "HOVERING"
+            and vio is not None and vio != "pending"
+            and not getattr(vio, "initialized", True)):
+        vio.reset(start_pose)
+        log.info("VIO reset at takeoff: new keyframe on next frame "
+                 "(was a pre-takeoff ground frame)")
+        return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # CLI — product server: live drone frames only
 # ---------------------------------------------------------------------------
@@ -949,6 +1071,10 @@ def main(argv=None):
     def pipeline_loop():
         nonlocal vio, show_drone_window
         t0 = time.monotonic()
+        n_frames = 0
+        last_status_t = time.monotonic()
+        prev_flight_status = flight_ctrl.status
+        last_battery = ""
         while not stop.is_set():
             if not state.running:
                 state.mark_paused()
@@ -959,6 +1085,7 @@ def main(argv=None):
                 time.sleep(0.05)
                 continue
             frame, pose, tracking_valid, meta = item
+            src_pose = pose  # source start pose (for the takeoff reset)
             # Wall-clock scenario time (the real loop runs ~4-5 fps,
             # not the 10 fps the frame counter assumed; tracks stayed
             # "live" ~2x too long in wall time).
@@ -977,6 +1104,34 @@ def main(argv=None):
                 frame, pose, tracking_valid, t)
             state.update_from_pipeline(pipeline, marker, info,
                                        time.time(), t)
+            n_frames += 1
+            if meta.get("battery", "") != "":
+                last_battery = meta.get("battery")
+            # Takeoff reset (2026-11-25): the VIO keyframe must be an
+            # airborne frame at the known start pose, not the
+            # pre-takeoff ground frame the server started with — the
+            # keyframe was ~2.5 min stale in every live run and init
+            # could never fire from it.
+            maybe_reset_vio_at_takeoff(vio, prev_flight_status,
+                                       flight_ctrl.status, src_pose)
+            prev_flight_status = flight_ctrl.status
+            # Periodic console status (about one line per 5 s, never
+            # per frame): battery % over time (a sag under load shows
+            # up here), bridge/tracking state, VIO state + numbers,
+            # frames processed.
+            now = time.monotonic()
+            if now - last_status_t >= 5.0:
+                last_status_t = now
+                vio_diag = {}
+                if vio is not None and vio != "pending":
+                    try:
+                        vio_diag = vio.last_diag
+                    except Exception:
+                        vio_diag = {}
+                log.info("%s", format_status_line(
+                    last_battery, flight_ctrl.status,
+                    info.get("bridge_valid", False), vio_diag,
+                    bool(getattr(vio, "initialized", False)), n_frames))
 
             if show_drone_window:
                 try:

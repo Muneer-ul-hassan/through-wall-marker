@@ -1,4 +1,4 @@
-"""Live-path regression tests (BUG 1 + BUG 2 + BUG 3 fixes, 2026-11-24/25).
+"""Live-path regression tests (BUG 1 + BUG 2 + BUG 3 + BUG 4 + BUG 5 fixes, 2026-11-24/25).
 
 Standalone: run from the project root with the project venv::
 
@@ -37,6 +37,17 @@ What each test proves:
   off, E lands, L turns right (L is deliberately NOT land any more),
   J turns left; the W/S/A/D/I/K moves are unchanged; an unknown key
   sends nothing.
+* VIO diagnostics + takeoff reset + status line (BUG 5, 2026-11-25):
+  init failures report the reason with numbers (tracked, flow,
+  inliers, floor points, keyframe age) and log one line per
+  transition; taking off resets an uninitialised VIO so the
+  keyframe is an airborne frame, not the pre-takeoff ground frame;
+  the 5 s console status line carries battery % over time, bridge
+  state, VIO state and frames processed. Ground watchdog (same
+  night): HOVERING + height ~0 cm for ~2 s resets to LANDED so [T]
+  works again after a self-landing; it never fires while taking off
+  or moving, or while the drone is actually airborne, or when no
+  height is available.
 """
 
 from __future__ import annotations
@@ -52,7 +63,9 @@ WALL_MARKER_DIR = Path(__file__).resolve().parent.parent
 if str(WALL_MARKER_DIR) not in sys.path:
     sys.path.insert(0, str(WALL_MARKER_DIR))
 
-from server.main import Pipeline, SafeFlightController, dispatch_drone_key, live_pose_step  # noqa: E402
+from server.main import (Pipeline, SafeFlightController,  # noqa: E402
+                         dispatch_drone_key, format_status_line,
+                         live_pose_step, maybe_reset_vio_at_takeoff)
 from server.video_source import TelloVideoSource  # noqa: E402
 from server.vio import MonocularVO  # noqa: E402
 
@@ -704,6 +717,227 @@ def test_key_unknown_does_nothing():
     print("PASS key_unknown_does_nothing")
 
 
+# ---------------------------------------------------------------------------
+# VIO diagnostics + takeoff reset + status line (BUG 5, 2026-11-25)
+# ---------------------------------------------------------------------------
+
+def test_status_line_carries_battery_and_bridge():
+    """The 5 s console line carries battery %, bridge state, VIO
+    state + numbers, and frames processed — the record the
+    'Tracking lost' black box was missing."""
+    diag = {"n_tracked": 18, "inliers": 0, "n_map": 0,
+            "pose_source": "invalid", "init_fail": "few-tracked",
+            "init_kf_age_frames": 742}
+    line = format_status_line(50, "HOVERING", False, diag, False, 123)
+    assert "bat=50%" in line, line
+    assert "bridge=invalid" in line, line
+    assert "frames=123" in line, line
+    assert "init=few-tracked" in line, line
+    assert "kf_age=742f" in line, line
+    line = format_status_line(50, "HOVERING", True,
+                              {"n_tracked": 120, "inliers": 95,
+                               "n_map": 210, "pose_source": "vision"},
+                              True, 456)
+    assert "bridge=valid" in line, line
+    assert "pose=vision" in line, line
+    assert "inliers=95" in line, line
+    line = format_status_line("", "LANDED", False, {}, False, 0)
+    assert "bat=—" in line, line
+    print("PASS status_line_carries_battery_and_bridge")
+
+
+def test_vio_init_failure_reason_static():
+    """Identical frames -> no displacement -> init waits with the
+    low-displacement reason (and logs it once, not per frame)."""
+    rng = np.random.default_rng(0)
+    frame = rng.integers(0, 255, (720, 960, 3), dtype=np.uint8)
+    vio = MonocularVO(start_pose=START_POSE)
+    cap = LogCapture()
+    vio_logger = logging.getLogger("server.vio")
+    vio_logger.addHandler(cap)
+    # INFO is filtered by default (root level WARNING); the live
+    # server configures INFO via basicConfig, so set it here too.
+    old_level = vio_logger.level
+    vio_logger.setLevel(logging.INFO)
+    try:
+        reasons = set()
+        for i in range(10):
+            _, valid, diag = vio.update(frame, t=i * 0.1)
+            assert valid is False
+            if i > 0:  # frame 0 is the keyframe; no init attempt yet
+                reasons.add(diag.get("init_fail"))
+        assert reasons == {"low-displacement"}, f"reasons: {reasons}"
+        waited = [m for m in cap.records
+                  if m.startswith("VIO init waiting")]
+        assert len(waited) == 1, \
+            f"init-wait lines: {len(waited)}: {waited}"
+        assert "low-displacement" in waited[0]
+        assert "tracked=" in waited[0] and "flow=" in waited[0]
+    finally:
+        vio_logger.removeHandler(cap)
+        vio_logger.setLevel(old_level)
+    print("PASS vio_init_failure_reason_static")
+
+
+def test_vio_init_failure_reason_blank():
+    """A blank frame has no features at all -> lk-empty."""
+    vio = MonocularVO(start_pose=START_POSE)
+    blank = np.zeros((720, 960, 3), dtype=np.uint8)
+    _, valid, diag = vio.update(blank, t=0.0)
+    assert valid is False
+    _, valid, diag = vio.update(blank, t=0.1)
+    assert valid is False
+    assert diag.get("init_fail") == "lk-empty", f"diag: {diag}"
+    assert diag.get("n_tracked") == 0
+    print("PASS vio_init_failure_reason_blank")
+
+
+class FakeVIO:
+    """Minimal stand-in for the takeoff-reset guard tests."""
+
+    def __init__(self, initialized=False):
+        self.initialized = initialized
+        self.resets = []
+
+    def reset(self, start_pose):
+        self.resets.append(start_pose)
+
+
+def test_takeoff_resets_uninitialised_vio():
+    """Takeoff resets an uninitialised VIO once; never a working
+    bridge, never twice for one takeoff, never with no VIO."""
+    fake = FakeVIO(initialized=False)
+    assert maybe_reset_vio_at_takeoff(fake, "LANDED", "HOVERING",
+                                      START_POSE) is True
+    assert fake.resets == [START_POSE]
+    # Same status again: no second reset (transition only).
+    assert maybe_reset_vio_at_takeoff(fake, "HOVERING", "HOVERING",
+                                      START_POSE) is False
+    assert len(fake.resets) == 1
+    # Already initialised: a working bridge is never wiped.
+    fake2 = FakeVIO(initialized=True)
+    assert maybe_reset_vio_at_takeoff(fake2, "LANDED", "HOVERING",
+                                      START_POSE) is False
+    assert fake2.resets == []
+    # No VIO yet: nothing to reset.
+    assert maybe_reset_vio_at_takeoff("pending", "LANDED", "HOVERING",
+                                      START_POSE) is False
+    assert maybe_reset_vio_at_takeoff(None, "LANDED", "HOVERING",
+                                      START_POSE) is False
+    print("PASS takeoff_resets_uninitialised_vio")
+
+
+def test_takeoff_reset_clears_stale_keyframe():
+    """A real VIO reset drops the pre-takeoff keyframe; the next
+    frame becomes the new (airborne) keyframe."""
+    rng = np.random.default_rng(0)
+    frame = rng.integers(0, 255, (720, 960, 3), dtype=np.uint8)
+    vio = MonocularVO(start_pose=START_POSE)
+    vio.update(frame, t=0.0)
+    assert vio._kf_gray is not None, "keyframe not set on first frame"
+    assert vio._prev_gray is not None
+    vio.reset(START_POSE)
+    assert vio._prev_gray is None, "reset did not clear the frame"
+    assert vio._kf_gray is None, "reset did not clear the keyframe"
+    assert vio.initialized is False
+    vio.update(frame, t=0.1)
+    assert vio._kf_gray is not None, "no new keyframe after reset"
+    assert vio._kf_frame == vio._n_frames
+    print("PASS takeoff_reset_clears_stale_keyframe")
+
+
+# ---------------------------------------------------------------------------
+# Ground watchdog (BUG 5, 2026-11-25): HOVERING + height ~0 -> LANDED
+# ---------------------------------------------------------------------------
+
+class FakeTelloWithHeight(FakeTello):
+    """FakeTello plus a controllable height reading. The plain
+    FakeTello has no get_height, so no watchdog thread starts for
+    it — only this subclass starts one."""
+
+    def __init__(self, *args, height_cm=100, height_error=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.height_cm = height_cm
+        self.height_error = height_error
+
+    def get_height(self):
+        if self.height_error is not None:
+            raise Exception(self.height_error)
+        return self.height_cm
+
+
+def _watchdog_controller(fake, poll=0.05, grace=0.15):
+    """Controller with a fast watchdog (test timing, not the 0.5 s /
+    2 s live values)."""
+    return SafeFlightController(fake, poll_interval_s=poll,
+                                ground_grace_s=grace)
+
+
+def _takeoff_and_hover(ctrl, fake):
+    ctrl.send_command("takeoff", fake.takeoff)
+    assert wait_until(lambda: ctrl.status == "HOVERING", timeout=3.0), \
+        f"takeoff did not reach HOVERING: {ctrl.status}"
+    assert wait_idle(ctrl)
+
+
+def test_watchdog_resets_landed_drone_and_takeoff_works_again():
+    """HOVERING + height 0 sustained -> LANDED, and a following
+    takeoff is accepted (the 2026-11-25 self-landing trap)."""
+    fake = FakeTelloWithHeight(height_cm=0)
+    ctrl = _watchdog_controller(fake)
+    _takeoff_and_hover(ctrl, fake)
+    assert wait_until(lambda: ctrl.status == "LANDED", timeout=3.0), \
+        f"watchdog did not reset a grounded drone: {ctrl.status}"
+    ctrl.send_command("takeoff", fake.takeoff)
+    assert wait_until(lambda: ctrl.status == "HOVERING", timeout=3.0), \
+        f"takeoff after watchdog reset not accepted: {ctrl.status}"
+    assert wait_idle(ctrl)
+    assert fake.names().count("takeoff") == 2, fake.names()
+    print("PASS watchdog_resets_landed_drone_and_takeoff_works_again")
+
+
+def test_watchdog_keeps_airborne_drone_hovering():
+    """HOVERING + height 100 cm -> stays HOVERING (never reset while
+    actually airborne)."""
+    fake = FakeTelloWithHeight(height_cm=100)
+    ctrl = _watchdog_controller(fake)
+    _takeoff_and_hover(ctrl, fake)
+    time.sleep(0.6)  # many watchdog polls at 0.05 s
+    assert ctrl.status == "HOVERING", \
+        f"watchdog reset an airborne drone: {ctrl.status}"
+    print("PASS watchdog_keeps_airborne_drone_hovering")
+
+
+def test_watchdog_no_height_means_no_reset():
+    """Height reads failing (or no height at all) -> no reset, ever:
+    a failed read is skipped, never counted as ground."""
+    fake = FakeTelloWithHeight(height_cm=0, height_error="no state yet")
+    ctrl = _watchdog_controller(fake)
+    _takeoff_and_hover(ctrl, fake)
+    time.sleep(0.6)
+    assert ctrl.status == "HOVERING", \
+        f"watchdog reset on failed height reads: {ctrl.status}"
+    # Plain FakeTello has no get_height: no watchdog thread at all.
+    fake2 = FakeTello()
+    ctrl2 = SafeFlightController(fake2)
+    _takeoff_and_hover(ctrl2, fake2)
+    time.sleep(0.6)
+    assert ctrl2.status == "HOVERING"
+    print("PASS watchdog_no_height_means_no_reset")
+
+
+def test_watchdog_never_fires_while_taking_off():
+    """Status TAKING_OFF + height 0 -> no reset (the guard is
+    HOVERING-only)."""
+    fake = FakeTelloWithHeight(height_cm=0)
+    ctrl = _watchdog_controller(fake)
+    ctrl.status = "TAKING_OFF"
+    time.sleep(0.6)
+    assert ctrl.status == "TAKING_OFF", \
+        f"watchdog fired during takeoff: {ctrl.status}"
+    print("PASS watchdog_never_fires_while_taking_off")
+
+
 def main():
     tests = [
         test_takeoff_not_joystick_blocks_moves,
@@ -727,6 +961,15 @@ def main():
         test_key_e_is_land_and_l_is_not,
         test_key_j_turns_left_and_moves,
         test_key_unknown_does_nothing,
+        test_status_line_carries_battery_and_bridge,
+        test_vio_init_failure_reason_static,
+        test_vio_init_failure_reason_blank,
+        test_takeoff_resets_uninitialised_vio,
+        test_takeoff_reset_clears_stale_keyframe,
+        test_watchdog_resets_landed_drone_and_takeoff_works_again,
+        test_watchdog_keeps_airborne_drone_hovering,
+        test_watchdog_no_height_means_no_reset,
+        test_watchdog_never_fires_while_taking_off,
     ]
     failed = 0
     for fn in tests:
