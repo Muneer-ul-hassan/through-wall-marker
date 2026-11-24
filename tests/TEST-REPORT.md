@@ -1618,3 +1618,31 @@ ONE flight controller now, theirs, reviewed on its merits and kept.
   stream (UDP 8890 height) into the controller — same follow-up as
   above. Until then: close the Tello app fully, reboot the drone,
   wait for green HOVERING before touching A/S/D, one key at a time.
+
+### Video-restart fix from the 2026-11-25 live run (same day, ~02:13)
+
+- What the log showed: `command` ok, `streamon` ok, then
+  djitellopy's decode thread died with `av.error.OSError: [Errno 5]
+  I/O error: 'udp://@0.0.0.0:11111'` — after that the laptop got no
+  video and `TelloVideoSource.read()` kept serving the last frame
+  forever, so the pipeline ran on a frozen frame with nothing
+  telling the user. Most likely trigger: the Tello app on the phone
+  grabbed the video stream (the drone sends video to one device).
+- Fix in `server/video_source.py` (`TelloVideoSource` only): `read()`
+  treats a frame object unchanged for > 3.0 s (wall clock) or a
+  stopped reader as a dead stream and restarts it (`streamoff` /
+  `streamon` / fresh `get_frame_read`), logging "VIDEO LOST:
+  restarting the drone video stream (attempt N/3)" and returning
+  None for that read (the pipeline loop already sleeps and
+  continues on None). After 3 failed restarts the source stays dead
+  and `read()` returns None; the log names the Tello app and tells
+  the user to force-close it, reboot the drone and restart the
+  server. `close()` still works after restarts; `tracking_valid`
+  stays False and the start-pose return is unchanged.
+- `tests/test_live_fixes.py` extended to 16 tests, all PASS
+  (2026-11-25): healthy reads never touch the stream; a frozen
+  frame restarts exactly once and the next read serves a fresh
+  frame; a stopped reader restarts; after 3 failed restarts no
+  further stream calls happen and the log names the Tello app.
+  Full 27-scenario suite not re-run: live-path only, the suite
+  uses SyntheticSource/FileVideoSource, not TelloVideoSource.

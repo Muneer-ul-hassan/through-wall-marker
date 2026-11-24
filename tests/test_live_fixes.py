@@ -1,4 +1,4 @@
-"""Live-path regression tests (BUG 1 + BUG 2 fixes, 2026-11-24).
+"""Live-path regression tests (BUG 1 + BUG 2 + BUG 3 fixes, 2026-11-24/25).
 
 Standalone: run from the project root with the project venv::
 
@@ -28,6 +28,11 @@ What each test proves:
   still produces NO marker (bridge invalid). The control shows the
   hazard the fix removes: the same frozen pose fed as tracking VALID
   *does* emit a marker — from a fiction frame.
+* TelloVideoSource video restart (BUG 3, 2026-11-25 live run): a
+  frozen frame (same object > 3 s) or a stopped reader restarts the
+  stream (streamoff + streamon + fresh reader) and the next read
+  serves a fresh frame; after 3 failed restarts the source stays
+  dead, returns None, and the log names the Tello app.
 """
 
 from __future__ import annotations
@@ -44,6 +49,7 @@ if str(WALL_MARKER_DIR) not in sys.path:
     sys.path.insert(0, str(WALL_MARKER_DIR))
 
 from server.main import Pipeline, SafeFlightController, live_pose_step  # noqa: E402
+from server.video_source import TelloVideoSource  # noqa: E402
 from server.vio import MonocularVO  # noqa: E402
 
 START_POSE = (np.eye(3), np.array([0.0, 1.3, 0.0]))
@@ -453,6 +459,163 @@ def test_forced_valid_would_emit_marker():
     print("PASS forced_valid_would_emit_marker (hazard documented)")
 
 
+# ---------------------------------------------------------------------------
+# TelloVideoSource video restart (BUG 3, 2026-11-25 live run)
+# ---------------------------------------------------------------------------
+
+class FakeFrameReader:
+    """Mimics djitellopy's BackgroundFrameRead: a ``frame`` attribute
+    plus a ``stopped`` flag."""
+
+    def __init__(self, frame=None):
+        self.frame = frame
+        self.stopped = False
+
+
+class FakeVideoTello:
+    """Records streamon/streamoff/get_frame_read; can fail streamon."""
+
+    def __init__(self, streamon_error=None):
+        self.streamon_error = streamon_error
+        self.calls = []
+
+    def streamon(self):
+        self.calls.append("streamon")
+        if self.streamon_error is not None:
+            raise Exception(self.streamon_error)
+
+    def streamoff(self):
+        self.calls.append("streamoff")
+
+    def get_frame_read(self, with_queue=True):
+        self.calls.append("get_frame_read")
+        return FakeFrameReader()
+
+    def get_current_state(self):
+        return {"bat": 87}
+
+
+def _make_video_source(fake_tello, frame_reader):
+    """A TelloVideoSource built without its real __init__ (no drone,
+    no djitellopy import) — the fake tello + reader are injected."""
+    src = TelloVideoSource.__new__(TelloVideoSource)
+    src.tello = fake_tello
+    src.frame_reader = frame_reader
+    src.start_height_m = 1.3
+    src.initial_pose = START_POSE
+    src._last_frame = None
+    src._last_frame_at = time.monotonic()
+    src._video_restarts = 0
+    src._video_dead = False
+    return src
+
+
+def test_video_normal_reads_no_restart():
+    """Healthy reads serve fresh frames and never touch the stream."""
+    fake = FakeVideoTello()
+    reader = FakeFrameReader(frame=np.zeros((4, 4, 3), dtype=np.uint8))
+    src = _make_video_source(fake, reader)
+    out1 = src.read()
+    assert out1 is not None, "first read returned None on a healthy stream"
+    assert out1[2] is False, "tracking_valid must stay False"
+    assert out1[3].get("battery") == 87
+    reader.frame = np.full((4, 4, 3), 128, dtype=np.uint8)
+    out2 = src.read()
+    assert out2 is not None
+    assert int(out2[0][0, 0, 0]) == 128, \
+        "second read did not serve the new frame"
+    assert fake.calls == [], \
+        f"stream calls on healthy reads: {fake.calls}"
+    assert src._video_restarts == 0
+    print("PASS video_normal_reads_no_restart")
+
+
+def test_video_frozen_frame_restarts_once():
+    """Same frame object for > 3 s restarts the stream exactly once,
+    and the next read serves a fresh frame from the new reader."""
+    fake = FakeVideoTello()
+    frozen = np.zeros((4, 4, 3), dtype=np.uint8)
+    reader = FakeFrameReader(frame=frozen)
+    src = _make_video_source(fake, reader)
+    cap = LogCapture()
+    logging.getLogger("server.video_source").addHandler(cap)
+    try:
+        assert src.read() is not None
+        # The decode thread died 3.5 s ago; the reader still holds
+        # the same frame object.
+        src._last_frame_at = time.monotonic() - 3.5
+        assert src.read() is None, \
+            "frozen read must return None (pipeline sleeps and continues)"
+        assert fake.calls == ["streamoff", "streamon", "get_frame_read"], \
+            f"restart sequence wrong: {fake.calls}"
+        assert any("VIDEO LOST: restarting the drone video stream (attempt 1/3)" in m
+                   for m in cap.records), \
+            f"no restart warning logged: {cap.records}"
+        # The new reader serves a fresh frame.
+        src.frame_reader.frame = np.full((4, 4, 3), 200, dtype=np.uint8)
+        out = src.read()
+        assert out is not None, "read after restart returned None"
+        assert int(out[0][0, 0, 0]) == 200, \
+            "read after restart did not serve the fresh frame"
+        assert fake.calls == ["streamoff", "streamon", "get_frame_read"], \
+            f"extra stream calls after restart: {fake.calls}"
+        # close() still works after a restart.
+        src.close()
+        assert fake.calls.count("streamoff") == 2, \
+            f"close after restart did not streamoff: {fake.calls}"
+    finally:
+        logging.getLogger("server.video_source").removeHandler(cap)
+    print("PASS video_frozen_frame_restarts_once")
+
+
+def test_video_stopped_flag_restarts():
+    """A stopped frame reader restarts the stream immediately, even
+    with a fresh frame — the flag alone is a death signal."""
+    fake = FakeVideoTello()
+    reader = FakeFrameReader(frame=np.zeros((4, 4, 3), dtype=np.uint8))
+    src = _make_video_source(fake, reader)
+    assert src.read() is not None
+    reader.stopped = True
+    assert src.read() is None, \
+        "stopped reader must return None, not a stale frame"
+    assert fake.calls == ["streamoff", "streamon", "get_frame_read"], \
+        f"restart sequence wrong: {fake.calls}"
+    print("PASS video_stopped_flag_restarts")
+
+
+def test_video_restart_cap_gives_up():
+    """After 3 failed restarts the source stays dead: read() returns
+    None, no further stream calls happen, and the log names the
+    Tello app as the likely cause."""
+    fake = FakeVideoTello(streamon_error="error No video")
+    reader = FakeFrameReader(frame=np.zeros((4, 4, 3), dtype=np.uint8))
+    src = _make_video_source(fake, reader)
+    assert src.read() is not None
+    cap = LogCapture()
+    logging.getLogger("server.video_source").addHandler(cap)
+    try:
+        for _ in range(3):
+            src._last_frame_at = time.monotonic() - 3.5
+            assert src.read() is None
+        assert fake.calls.count("streamon") == 3, \
+            f"streamon calls after 3 failed restarts: {fake.calls}"
+        assert fake.calls.count("streamoff") == 3
+        assert src._video_restarts == 3
+        before = list(fake.calls)
+        src._last_frame_at = time.monotonic() - 3.5
+        assert src.read() is None
+        assert fake.calls == before, \
+            f"stream calls continued after the cap: {fake.calls}"
+        assert src._video_dead is True
+        assert any("Tello app" in m for m in cap.records), \
+            f"cap error did not name the Tello app: {cap.records}"
+        assert any("force-close" in m for m in cap.records), \
+            "cap error gave no force-close guidance"
+    finally:
+        logging.getLogger("server.video_source").removeHandler(cap)
+    print("PASS video_restart_cap_gives_up")
+
+
 def main():
     tests = [
         test_takeoff_not_joystick_blocks_moves,
@@ -467,6 +630,10 @@ def main():
         test_vio_honest_on_static_camera,
         test_no_marker_without_bridge,
         test_forced_valid_would_emit_marker,
+        test_video_normal_reads_no_restart,
+        test_video_frozen_frame_restarts_once,
+        test_video_stopped_flag_restarts,
+        test_video_restart_cap_gives_up,
     ]
     failed = 0
     for fn in tests:

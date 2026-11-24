@@ -577,3 +577,13 @@ tools/make_cert.sh  self-signed cert for iPhone HTTPS on LAN
   phone-browser disconnects (WinError 10053) instead of dumping a
   traceback. `tests/test_live_fixes.py` extended to 12 tests, all
   PASS; real-only UI server tests re-run: PASS.
+
+- Video-restart fix from the 2026-11-25 live run: djitellopy's
+  decode thread died (`av.error.OSError` on `udp://@:11111`) and
+  `TelloVideoSource.read()` kept serving the last frame forever.
+  `read()` now detects a dead stream (same frame object > 3 s, or
+  a stopped reader) and restarts it (`streamoff` / `streamon` /
+  fresh reader), up to 3 attempts per run; after that it stays
+  honestly dead and returns None, with the log naming the Tello
+  app as the likely cause. `tests/test_live_fixes.py` extended to
+  16 tests, all PASS.
