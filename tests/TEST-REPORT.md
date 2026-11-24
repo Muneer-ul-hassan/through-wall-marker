@@ -1717,3 +1717,40 @@ ONE flight controller now, theirs, reviewed on its merits and kept.
   is accepted, keeps an airborne drone hovering, never fires without
   a height reading or while taking off. Full 27-scenario suite not
   re-run: live-path only.
+
+### process_frame None-foot crash (BUG 6, 2026-11-25)
+
+- The live run: the BUG 5 fix worked — 'VIO reset at takeoff'
+  fired, 'VIO initialised at frame 7' (E inliers 648, tracked 673),
+  bridge=valid at 03:37:43 and 03:37:51, the first time ever live.
+  Then at 03:37:51 VIO tracking was lost (lk-empty, turn toward
+  the blanket) and the pipeline thread crashed:
+  `TypeError: unsupported operand type(s) for -: 'float' and
+  'NoneType'` at `server/main.py` line 226, `rough - st["foot"]`.
+  The thread died, so no more frames were processed and the
+  keyboard (including land) stopped working; Ctrl+C in the console
+  is the way to land after such a crash.
+- Root cause: a new person track is created with `"foot": None`
+  (`server/main.py`, the `person_id is None` branch) and the foot
+  is only filled in later, when a depth is estimated AND the
+  bridge is valid. After tracking is lost the bridge stays invalid,
+  so the foot is never set — but `_last_depth` / `_last_foot` are
+  never cleared either, so the next frame's association still runs
+  and dereferences the None foot. Reproduced exactly in isolation
+  before fixing (same line, same TypeError): valid frames localise
+  a person, a lost frame at a moved pose creates the footless
+  track, the next lost frame crashes.
+- Fix in `server/main.py` (one guard, no restructure): the
+  association loop skips tracks whose foot is None — a footless
+  track has nothing to compare, so it can never match. The other
+  Nones on that path were already guarded (`rough` checked, and
+  `_last_depth` / `_last_foot` checked before the block). The VIO
+  reset, the STATUS line and the ground watchdog are untouched.
+- `tests/test_live_fixes.py` extended to 32 tests, all PASS
+  (pytest and the standalone runner, 2026-11-25): a seeded
+  None-foot track is skipped and `process_frame` returns normally
+  with tracking invalid (twice in a row); the end-to-end replay of
+  the 03:37:51 crash — localise, lose tracking at a moved pose,
+  keep feeding lost frames — returns normally on every frame with
+  no marker and bridge invalid. Full 27-scenario suite not
+  re-run: live-path only.

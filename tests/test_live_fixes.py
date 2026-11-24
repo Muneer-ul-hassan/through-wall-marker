@@ -1,4 +1,4 @@
-"""Live-path regression tests (BUG 1 + BUG 2 + BUG 3 + BUG 4 + BUG 5 fixes, 2026-11-24/25).
+"""Live-path regression tests (BUG 1 + BUG 2 + BUG 3 + BUG 4 + BUG 5 + BUG 6 fixes, 2026-11-24/25).
 
 Standalone: run from the project root with the project venv::
 
@@ -48,6 +48,15 @@ What each test proves:
   works again after a self-landing; it never fires while taking off
   or moving, or while the drone is actually airborne, or when no
   height is available.
+* process_frame None-foot crash (BUG 6, 2026-11-25): a track is
+  created with foot=None and the foot is only set once a depth is
+  estimated with a valid bridge — after tracking is lost the foot
+  is never set, but _last_depth/_last_foot are never cleared, so
+  the next frame's association dereferenced the None foot
+  (TypeError) and killed the pipeline thread, taking the keyboard
+  with it. A footless track is now skipped in the association
+  (never matched), so process_frame returns normally with tracking
+  lost.
 """
 
 from __future__ import annotations
@@ -938,6 +947,68 @@ def test_watchdog_never_fires_while_taking_off():
     print("PASS watchdog_never_fires_while_taking_off")
 
 
+# ---------------------------------------------------------------------------
+# process_frame None-foot crash (BUG 6, 2026-11-25 live run)
+# ---------------------------------------------------------------------------
+
+def test_none_foot_track_never_crashes_association():
+    """A track with foot=None in _person_state must be skipped in
+    the association, never dereferenced. Direct unit test of the
+    guard: seed a localised person (so _last_depth/_last_foot are
+    set and the association runs) plus a None-foot track, then call
+    process_frame with tracking invalid — it must return normally,
+    with no marker, instead of raising TypeError."""
+    frame = np.zeros((720, 960, 3), dtype=np.uint8)
+    pipe = Pipeline(StubDetector(), drone_id="drone1")
+    pipe._last_depth = 4.0
+    pipe._last_foot = np.array([0.0, 0.59, 4.0])
+    pipe._person_state[0] = {"foot": np.array([0.0, 0.59, 4.0]),
+                             "depth": 4.0}
+    pipe._histories[0] = []
+    pipe._person_state[1] = {"foot": None, "depth": None}
+    pipe._histories[1] = []
+    pipe._current_person_id = 1
+    marker, info = pipe.process_frame(frame, START_POSE, False, t=0.0)
+    assert marker is None, f"marker emitted with invalid tracking: {marker}"
+    assert info["bridge_valid"] is False
+    assert pipe.frames_processed == 1
+    # And again: the poisoned entry is still there, still skipped.
+    marker, info = pipe.process_frame(frame, START_POSE, False, t=0.1)
+    assert marker is None
+    assert pipe.frames_processed == 2
+    print("PASS none_foot_track_never_crashes_association")
+
+
+def test_process_frame_survives_tracking_loss_after_localisation():
+    """End-to-end replay of the 2026-11-25 03:37:51 crash: localise
+    a person with valid tracking, then lose tracking while the drone
+    has moved (the turn toward the blanket) — the lost frame creates
+    a new track whose foot is never set because the bridge is
+    invalid — then keep feeding lost frames. process_frame must
+    return normally on every frame (no marker, bridge invalid);
+    before the fix the second lost frame raised TypeError and
+    killed the pipeline thread, taking the keyboard with it."""
+    frame = np.zeros((720, 960, 3), dtype=np.uint8)
+    pipe = Pipeline(StubDetector(), drone_id="drone1")
+    for i in range(6):
+        marker, info = pipe.process_frame(frame, START_POSE, True,
+                                          t=i * 0.1)
+    assert pipe._last_foot is not None, \
+        "setup failed: no foot localised on valid frames"
+    moved = (np.eye(3), np.array([2.0, 1.3, 0.0]))
+    for j in range(5):
+        marker, info = pipe.process_frame(frame, moved, False,
+                                          t=0.6 + j * 0.1)
+        assert marker is None, \
+            f"marker emitted with invalid tracking (lost frame {j})"
+        assert info["bridge_valid"] is False
+    assert pipe.frames_processed == 11
+    assert any(st["foot"] is None
+               for st in pipe._person_state.values()), \
+        "setup failed: no None-foot track was created by the lost frames"
+    print("PASS process_frame_survives_tracking_loss_after_localisation")
+
+
 def main():
     tests = [
         test_takeoff_not_joystick_blocks_moves,
@@ -970,6 +1041,8 @@ def main():
         test_watchdog_keeps_airborne_drone_hovering,
         test_watchdog_no_height_means_no_reset,
         test_watchdog_never_fires_while_taking_off,
+        test_none_foot_track_never_crashes_association,
+        test_process_frame_survives_tracking_loss_after_localisation,
     ]
     failed = 0
     for fn in tests:

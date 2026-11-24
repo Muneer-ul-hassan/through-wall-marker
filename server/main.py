@@ -223,7 +223,23 @@ class Pipeline:
                     self._last_depth, foot_uv=foot_uv)
                 if rough is not None:
                     for pid, st in self._person_state.items():
-                        if float(np.linalg.norm(rough - st["foot"])) <= 1.0:
+                        foot = st.get("foot")
+                        if foot is None:
+                            # BUG 6 (2026-11-25 live run): a track is
+                            # created with foot=None and the foot is
+                            # only filled in once a depth is estimated
+                            # with a valid bridge. After tracking is
+                            # lost the bridge stays invalid, so the
+                            # foot is never set — but _last_depth /
+                            # _last_foot are never cleared either, so
+                            # the next frame's association still ran
+                            # and `rough - None` raised TypeError,
+                            # killing the pipeline thread (and with it
+                            # the keyboard, including land). A track
+                            # with no foot has nothing to compare, so
+                            # it can never match: skip it.
+                            continue
+                        if float(np.linalg.norm(rough - foot)) <= 1.0:
                             person_id = pid
                             break
             if person_id is None:

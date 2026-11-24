@@ -606,3 +606,14 @@ tools/make_cert.sh  self-signed cert for iPhone HTTPS on LAN
   extended to 30 tests, all PASS. Battery note: ~2 min flights on
   a full charge vs ~13 min healthy — the battery is worn; the %
   trace will show any in-flight sag.
+- process_frame None-foot crash from the 2026-11-25 03:37 live run:
+  the BUG 5 fix worked (VIO initialised, bridge=valid — first time
+  live), but when tracking was lost the pipeline thread crashed
+  with `TypeError` at `rough - st["foot"]`: a track created while
+  the bridge was invalid never got its foot set, while
+  `_last_depth`/`_last_foot` were never cleared, so the next
+  frame's association dereferenced the None foot — killing the
+  pipeline thread and the keyboard with it. Footless tracks are
+  now skipped in the association (never matched), so
+  `process_frame` returns normally with tracking lost.
+  `tests/test_live_fixes.py` extended to 32 tests, all PASS.
