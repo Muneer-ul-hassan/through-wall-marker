@@ -65,8 +65,16 @@ fails on a frame, the last good skeleton is held for **at most 0.5 s**
   pose comes from the bridge setup.
 - Safari needs a **secure context** for the camera: plain `http://`
   works on localhost only. On the laptop's LAN IP you must use HTTPS:
-  `tools/make_cert.sh` generates a self-signed cert; open
-  `https://<laptop-ip>:8080/viewer` and accept the certificate warning.
+  `tools/make_cert.sh` creates a local CA and a leaf cert signed by it
+  (SAN covers the laptop's LAN IP, e.g. 192.168.10.2, plus the Windows
+  hotspot IP 192.168.137.1). Install the CA public cert (`certs/ca.crt`,
+  never the CA key) on the iPhone — Settings > Profile Downloaded >
+  Install, then Settings > General > About > Certificate Trust
+  Settings > switch the CA on — then open
+  `https://<laptop-ip>:8443/viewer` with no warning. A bare self-signed
+  leaf does NOT work on iOS: since iOS 13 Safari ignores the CN and
+  requires the exact IP in the SAN, and a self-signed leaf gets no
+  trust switch at all.
 - **Honest limit:** full 6-DoF phone tracking on iPhone would need a
   native ARKit app, which is out of scope for this build. The web
   viewer is the working version; if the user moves the phone after the
@@ -500,7 +508,7 @@ tests/              render.py (two-room renderer), scenarios.py (7 scenarios),
                     point: scenario frames + VIO/mono flags),
                     test_real_only.py (5 real-only UI tests),
                     TEST-REPORT.md (measured results)
-tools/make_cert.sh  self-signed cert for iPhone HTTPS on LAN
+tools/make_cert.sh  local CA + leaf cert for iPhone HTTPS on LAN (install ca.crt on the phone)
 ```
 
 ## Build history (2026-11-23)

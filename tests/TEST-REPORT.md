@@ -2037,3 +2037,60 @@ floor visible in the lower frame and good light, pin the blanket still
 (never hand-held) and keep the drone clear of fabric, and remember the
 saved map is only valid from the same takeoff spot. See
 `docs/AUTONOMOUS_MODE.md`.
+
+### Certificate fix (BUG 8, 2026-11-25 — iPhone could not trust the viewer)
+
+Symptom (user, 2026-11-25 ~04:55): the iPhone would not connect to the
+Tello WiFi / the viewer link would not open, even when the phone was on
+the Tello network. Root cause, two independent iOS facts (Apple primary
+sources): (1) since iOS 13 Safari ignores the certificate CN and
+requires the exact host/IP typed in the URL in the subjectAltName — the
+old `tools/make_cert.sh` made a bare self-signed leaf with SAN only
+DNS:hostname, DNS:localhost, IP:127.0.0.1, i.e. no SAN for the laptop's
+Tello-network IP 192.168.10.2; (2) iOS offers no trust switch for a
+self-signed leaf at all — only a root CA installed on the phone can be
+fully trusted (Settings > General > About > Certificate Trust Settings).
+
+Fix: `tools/make_cert.sh` rewritten (same CLI: `[LAN-IP-or-hostname]
+[out-dir]`, defaults 192.168.10.2 / ./certs). It now creates a local CA
+(ca.key + ca.crt, RSA 2048, SHA-256, basicConstraints critical CA:TRUE,
+keyUsage critical keyCertSign+cRLSign, 10 years) and issues a leaf
+(cert.pem + key.pem) signed by it (RSA 2048, SHA-256, 397 days,
+extendedKeyUsage serverAuth, SAN IP:<LAN IP>, IP:192.168.10.2,
+IP:127.0.0.1, IP:192.168.137.1 [Windows Mobile Hotspot IP],
+DNS:localhost, DNS:<hostname>). Re-running reuses an existing CA so the
+phone's trust stays valid; only the leaf is re-issued. The script prints
+the install steps (ca.crt only — NEVER ca.key — AirDrop/email, Settings
+> Profile Downloaded > Install, then Certificate Trust Settings switch
+on) and the `openssl verify` command. README.md iPhone notes and the
+tools file list corrected to the CA route (live port is 8443, not 8080).
+
+Measured verification (2026-11-25, scratch dirs under /tmp, never in
+the repo; OpenSSL 3.0.13):
+- `sh tools/make_cert.sh 192.168.10.2 /tmp/certtest1` →
+  `/tmp/certtest1/cert.pem: OK` (`openssl verify -CAfile ca.crt
+  cert.pem`); SAN `IP:192.168.10.2, IP:127.0.0.1, IP:192.168.137.1,
+  DNS:localhost, DNS:htch-runtime`; EKU `TLS Web Server Authentication`;
+  issuer `CN = Wall-Marker Local CA`; leaf validity exactly 397 days
+  (Nov 24 2026 → Dec 26 2027).
+- CA: `sha256WithRSAEncryption`, RSA 2048, Basic Constraints critical
+  CA:TRUE, Key Usage critical Certificate Sign + CRL Sign, validity
+  3650 days (Nov 2026 → Nov 2036).
+- Leaf key RSA 2048; signature algorithm sha256WithRSAEncryption.
+- Re-run with a hostname arg (`mylaptop`) in the same dir: `Reusing
+  existing CA` (CA not regenerated), new leaf SAN
+  `IP:192.168.10.2, IP:127.0.0.1, IP:192.168.137.1, DNS:localhost,
+  DNS:mylaptop`, verify still OK.
+- No-args run (defaults) in a fresh dir: creates ./certs with the
+  correct SAN; no stray files (no ca.srl — serial set via -set_serial).
+- Server load path, exact code from `server/main.py` run_server
+  (`ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)` + `load_cert_chain`):
+  `load_cert_chain OK`. The live drone server was NOT run.
+- No new pytest tests (no natural unit test for a shell/openssl flow;
+  the openssl commands above are the verification).
+
+Still to prove live: after pulling, the user runs the script on his
+Windows laptop, installs ca.crt on the iPhone, enables the CA in
+Certificate Trust Settings, and opens https://192.168.10.2:8443/viewer
+with no warning. That live step is untested — the phone side cannot be
+verified from this VM.
