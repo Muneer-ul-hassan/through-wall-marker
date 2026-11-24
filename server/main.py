@@ -679,6 +679,18 @@ class RobustThreadingHTTPServer(ThreadingHTTPServer):
             except (ssl.SSLError, OSError):
                 continue
 
+    def handle_error(self, request, client_address):
+        # A phone browser closing the viewer mid-request aborts the
+        # connection (WinError 10053). That is normal, not a server
+        # fault: swallow it instead of dumping a traceback.
+        # (2026-11-24 live run: the 10053 traceback in the log came
+        # from this path, not from _serve_sse.)
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionAbortedError,
+                            ConnectionResetError, BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
+
 
 def run_server(state, viewer_path, host, port, use_https, cert, key):
     handler = make_handler(state, viewer_path)
@@ -746,13 +758,26 @@ class SafeFlightController:
                     self.last_action = "Hovering"
             except Exception as exc:
                 log.error("Flight command '%s' returned error: %s", cmd_name, exc)
-                if "not joystick" in str(exc).lower():
+                msg = str(exc).lower()
+                if "not joystick" in msg or "no valid imu" in msg:
+                    # The drone is no longer under SDK control (the Tello
+                    # app grabbed it mid-flight: "Not joystick") or it is
+                    # down (the IMU is invalid when not flying). Either
+                    # way the HOVERING state cannot be trusted: reset to
+                    # LANDED so [T] works again instead of being ignored
+                    # as "already HOVERING". (2026-11-24 live run: a
+                    # forward 30 failed with both errors in a row and the
+                    # drone was on the ground while the controller still
+                    # said HOVERING, so five [T] presses were ignored.)
+                    kind = "TAKEOFF" if cmd_name == "takeoff" else "MOVE"
                     log.error(
-                        "TAKEOFF REJECTED (Not joystick): the Tello app on the "
-                        "phone is still holding the controls. Force-close the "
-                        "Tello app on the phone, reboot the drone, then "
-                        "restart the server and press [T] again.")
-                if self.status == "TAKING_OFF":
+                        "%s REJECTED (%s): the Tello app on the phone "
+                        "is holding the controls, or the drone is down. "
+                        "Force-close the Tello app on the phone, reboot "
+                        "the drone, then restart the server and press "
+                        "[T] again.", kind, exc)
+                    self.status = "LANDED"
+                elif self.status == "TAKING_OFF":
                     self.status = "LANDED"
                 elif self.status == "MOVING":
                     self.status = "HOVERING"

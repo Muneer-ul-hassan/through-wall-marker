@@ -566,4 +566,14 @@ tools/make_cert.sh  self-signed cert for iPhone HTTPS on LAN
   `OSError` (WinError 10053 on browser disconnect). Verified:
   `tests/test_live_fixes.py` 9/9 PASS; full virtual suite re-run
   27/27 PASS with VIO numbers unchanged (s1 40.5, s23 32.6, s20
-  36.1, s4 36.3 cm).
+  36.1, s4 36.3 cm). Pushed as commit 531ba8ba.
+
+- Follow-up fixes from the 2026-11-24 live run (same day): a move
+  failing with "Not joystick" or "No valid imu" now resets the
+  controller to LANDED so [T] works again (the live log showed the
+  drone on the ground while the controller still said HOVERING, so
+  five [T] presses were ignored); the rejection is labelled by the
+  command that failed (MOVE vs TAKEOFF); the HTTP server swallows
+  phone-browser disconnects (WinError 10053) instead of dumping a
+  traceback. `tests/test_live_fixes.py` extended to 12 tests, all
+  PASS; real-only UI server tests re-run: PASS.

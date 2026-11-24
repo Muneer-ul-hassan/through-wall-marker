@@ -1499,7 +1499,7 @@ Per-scenario detail (model runs) follows; the baseline detail is in the extended
 
 ## Live-path fixes — reconciliation with d89be655 (2026-11-24)
 
-Local only, not pushed. The laptop live code (commit 0e8d507b) was merged
+Pushed 2026-11-24 ~01:13 as commit 531ba8ba (verified live). The laptop live code (commit 0e8d507b) was merged
 into the local copy first, then the other AI's commit d89be655
 ("Add SafeFlightController with thread-safe locking, debouncing, and
 flight HUD status") landed on top of it and changed only
@@ -1559,7 +1559,8 @@ ONE flight controller now, theirs, reviewed on its merits and kept.
 ### Measured verification (2026-11-24, ground/virtual only, no flight)
 
 - `tests/test_live_fixes.py` (new, standalone, not wired into
-  `run_tests.py`): **9/9 PASS** — Not-joystick blocks moves and logs
+  `run_tests.py`): **12/12 PASS** (re-run 2026-11-24 after the
+  follow-up fixes below) — Not-joystick blocks moves and logs
   the force-close guidance; retry after fixing the app works;
   movement gated on takeoff; land exactly once (5 rapid lands + 1
   after landing = 1 send); 10 concurrent moves never overlap
@@ -1568,7 +1569,11 @@ ONE flight controller now, theirs, reviewed on its merits and kept.
   VIO on identical static frames stays invalid for 10 frames;
   pipeline with a stub detector + tracking invalid emits no marker
   for 10 frames; control proves the hazard — the same frozen pose
-  fed as tracking VALID does emit a marker.
+  fed as tracking VALID does emit a marker; a move failing with
+  "Not joystick" or "No valid imu" resets to LANDED so [T] works
+  again (and is labelled MOVE, not TAKEOFF); a phone-browser
+  disconnect (WinError 10053) is swallowed, a real error still
+  prints.
 - Full virtual suite re-run on the reconciled code
   (`full_suite_2026-11-24_reconciled.log`, 724.0 s, exit 0):
   **27/27 main scenarios PASS, 0 FAIL**; VIO numbers unchanged
@@ -1579,3 +1584,37 @@ ONE flight controller now, theirs, reviewed on its merits and kept.
   StatePrior) is not fed to it. And `connect_tello_to_home_wifi.py`
   puts the drone in station mode, after which `Tello()` (default
   host 192.168.10.1) would not find it.
+
+### Follow-up fixes from the 2026-11-24 live run (same day, ~03:51)
+
+- What the log showed: takeoff worked twice (HOVERING both times).
+  Every A/D press landed while takeoff/landing was still running
+  (~9 s window) and was dropped by the lock as "Drone busy" — so
+  from the user's side A/S/D never moved the drone; only W executed
+  once (forward 30 ok), then failed with "error Not joystick" (the
+  Tello app on the phone grabbed control mid-flight) and then
+  "error No valid imu" (drone down). The controller still said
+  HOVERING, so five [T] presses were ignored as "already HOVERING".
+  The 10053 traceback at the end came from the HTTP request handler
+  (phone browser disconnecting mid-request), not from `_serve_sse`.
+- Fixes in `server/main.py`: (1) a move failing with "Not joystick"
+  or "No valid imu" now resets status to LANDED, so [T] is accepted
+  again; (2) the rejection is labelled by the command that failed
+  (MOVE vs TAKEOFF) — the old message wrongly said "TAKEOFF
+  REJECTED" for a failed forward move; (3)
+  `RobustThreadingHTTPServer.handle_error` swallows
+  `ConnectionAbortedError` / `ConnectionResetError` /
+  `BrokenPipeError` (client disconnects) and still prints real
+  errors. `tests/test_live_fixes.py` extended to 12 tests, all PASS
+  (re-run by the author, 2026-11-24); real-only UI server tests
+  re-run standalone via `run_all(port=18865)`: PASS (all 5
+  sub-tests). Full 27-scenario suite not re-run for this change:
+  the edits touch only the flight controller's error path and the
+  HTTP error handler, both covered by the 12 live-fix tests and
+  the real-only tests.
+- Still open: the status can only desync again if the drone's real
+  state changes without the controller knowing (app takeover,
+  forced landing). The proper fix is feeding the Tello state
+  stream (UDP 8890 height) into the controller — same follow-up as
+  above. Until then: close the Tello app fully, reboot the drone,
+  wait for green HOVERING before touching A/S/D, one key at a time.

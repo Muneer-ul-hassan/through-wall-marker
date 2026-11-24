@@ -16,7 +16,12 @@ What each test proves:
   on a successful takeoff (status HOVERING); land sent exactly once
   (busy-skip + the LANDED idempotency guard); "Not joystick" logs the
   force-close-the-app guidance and leaves the drone LANDED, so a
-  retry after fixing the app is accepted (no session block).
+  retry after fixing the app is accepted (no session block). Added
+  2026-11-24 after the live run: a move failing with "Not joystick"
+  or "No valid imu" also resets to LANDED (the drone is down or no
+  longer under SDK control, so [T] must work again), the rejection
+  is labelled MOVE not TAKEOFF, and a phone browser disconnect
+  (WinError 10053) is swallowed instead of dumped as a traceback.
 * live_pose_step (BUG 2): the VIO verdict passes through honestly — a
   failed VIO is never papered over with the frozen start pose.
 * Pipeline gate (BUG 2): with tracking invalid, a detected person
@@ -60,8 +65,9 @@ def wait_until(pred, timeout=2.0, interval=0.01):
 class FakeTello:
     """Records every call in order; tracks concurrent execution."""
 
-    def __init__(self, takeoff_error=None, move_delay=0.0):
+    def __init__(self, takeoff_error=None, move_error=None, move_delay=0.0):
         self.takeoff_error = takeoff_error
+        self.move_error = move_error
         self.move_delay = move_delay
         self.calls = []
         self._lock = threading.Lock()
@@ -69,6 +75,9 @@ class FakeTello:
         self.max_inflight = 0
 
     def _record(self, name, *args):
+        if self.move_error is not None and (
+                name.startswith("move_") or name.startswith("rotate_")):
+            raise Exception(self.move_error)
         with self._lock:
             self._inflight += 1
             self.max_inflight = max(self.max_inflight, self._inflight)
@@ -222,6 +231,92 @@ def test_land_exactly_once():
     print("PASS land_exactly_once")
 
 
+def test_move_not_joystick_resets_to_landed():
+    """A move failing with 'Not joystick' mid-flight resets the
+    controller to LANDED, so [T] is accepted again instead of being
+    ignored as 'already HOVERING' — and the log names the MOVE, not
+    a takeoff. (2026-11-24 live run: forward 30 failed this way
+    while the drone was on the ground and five [T] presses did
+    nothing.)"""
+    fake = FakeTello()
+    ctrl = SafeFlightController(fake)
+    cap = LogCapture()
+    logging.getLogger("server.main").addHandler(cap)
+    try:
+        ctrl.send_command("takeoff", fake.takeoff)
+        assert wait_until(lambda: ctrl.status == "HOVERING", timeout=3.0)
+        assert wait_idle(ctrl)
+        fake.move_error = (
+            "Command 'forward 30' was unsuccessful for 4 tries. "
+            "Latest response: 'error Not joystick'")
+        ctrl.send_command("forward 30", fake.move_forward, 30)
+        assert wait_until(lambda: ctrl.status == "LANDED", timeout=3.0), \
+            f"status after Not-joystick move: {ctrl.status}"
+        assert wait_idle(ctrl)
+        assert any("MOVE REJECTED" in m for m in cap.records), \
+            "move failure was not labelled MOVE"
+        assert not any("TAKEOFF REJECTED" in m for m in cap.records), \
+            "move failure was mislabelled as a takeoff rejection"
+        assert any("Force-close" in m for m in cap.records), \
+            "no force-close guidance logged"
+        fake.move_error = None  # app closed, drone rebooted
+        ctrl.send_command("takeoff", fake.takeoff)
+        assert wait_until(lambda: ctrl.status == "HOVERING", timeout=3.0), \
+            f"[T] after a failed move did not reach HOVERING: {ctrl.status}"
+    finally:
+        logging.getLogger("server.main").removeHandler(cap)
+    print("PASS move_not_joystick_resets_to_landed")
+
+
+def test_move_no_valid_imu_resets_to_landed():
+    """'No valid imu' on a move means the drone is down: same reset,
+    so [T] works again."""
+    fake = FakeTello()
+    ctrl = SafeFlightController(fake)
+    ctrl.send_command("takeoff", fake.takeoff)
+    assert wait_until(lambda: ctrl.status == "HOVERING", timeout=3.0)
+    assert wait_idle(ctrl)
+    fake.move_error = (
+        "Command 'forward 30' was unsuccessful for 4 tries. "
+        "Latest response: 'error No valid imu'")
+    ctrl.send_command("forward 30", fake.move_forward, 30)
+    assert wait_until(lambda: ctrl.status == "LANDED", timeout=3.0), \
+        f"status after No-valid-imu move: {ctrl.status}"
+    assert wait_idle(ctrl)
+    fake.move_error = None
+    ctrl.send_command("takeoff", fake.takeoff)
+    assert wait_until(lambda: ctrl.status == "HOVERING", timeout=3.0), \
+        f"[T] after a No-valid-imu move did not reach HOVERING: {ctrl.status}"
+    print("PASS move_no_valid_imu_resets_to_landed")
+
+
+def test_handle_error_swallows_disconnect():
+    """A phone browser closing the viewer mid-request (WinError 10053)
+    is swallowed, not dumped as a traceback; a real error still is."""
+    import contextlib
+    import io
+
+    from server.main import RobustThreadingHTTPServer
+    srv = RobustThreadingHTTPServer.__new__(RobustThreadingHTTPServer)
+    try:
+        raise ConnectionAbortedError(10053, "test disconnect")
+    except ConnectionAbortedError:
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            srv.handle_error(None, ("192.168.10.2", 58497))
+        assert buf.getvalue() == "", \
+            f"disconnect traceback was printed: {buf.getvalue()[:200]}"
+    try:
+        raise ValueError("real server fault")
+    except ValueError:
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            srv.handle_error(None, ("192.168.10.2", 58497))
+        assert "ValueError" in buf.getvalue(), \
+            "a real error was swallowed along with disconnects"
+    print("PASS handle_error_swallows_disconnect")
+
+
 def test_commands_serialized_and_coalesced():
     """Concurrent move calls never overlap on the drone and never backlog."""
     fake = FakeTello(move_delay=0.05)
@@ -364,6 +459,9 @@ def main():
         test_takeoff_retry_after_not_joystick,
         test_movement_gated_on_takeoff,
         test_land_exactly_once,
+        test_move_not_joystick_resets_to_landed,
+        test_move_no_valid_imu_resets_to_landed,
+        test_handle_error_swallows_disconnect,
         test_commands_serialized_and_coalesced,
         test_pose_step_passes_verdict_through,
         test_vio_honest_on_static_camera,
