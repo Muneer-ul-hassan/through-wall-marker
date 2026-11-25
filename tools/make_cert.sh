@@ -86,7 +86,7 @@ else
 fi
 
 # --- Leaf, signed by the CA (397 days, serverAuth) -------------------
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d -p .)"
 trap 'rm -rf "$WORK"' EXIT INT TERM
 cat > "$WORK/leaf_ext.cnf" <<EOF
 basicConstraints=CA:FALSE

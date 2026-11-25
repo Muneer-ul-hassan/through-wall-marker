@@ -1287,6 +1287,8 @@ def main(argv=None):
     ap.add_argument("--https", action="store_true")
     ap.add_argument("--cert", default="certs/cert.pem")
     ap.add_argument("--key", default="certs/key.pem")
+    ap.add_argument("--desk-mode", action="store_true", default=False,
+                    help="Desk test mode: force tracking valid so markers emit without flight")
     # Refuse virtual mode before argparse runs: the old command line
     # (--mode virtual --scenario ...) no longer exists here, so a bare
     # --mode virtual would otherwise die in argparse without pointing
@@ -1371,6 +1373,7 @@ def main(argv=None):
     stop = threading.Event()
     vio = "pending"
     show_drone_window = True
+    desk_mode = bool(args.desk_mode)
 
     flight_ctrl = SafeFlightController(getattr(source, "tello", None))
 
@@ -1400,7 +1403,7 @@ def main(argv=None):
         saved_map = None
 
     def pipeline_loop():
-        nonlocal vio, show_drone_window
+        nonlocal vio, show_drone_window, desk_mode
         t0 = time.monotonic()
         n_frames = 0
         last_status_t = time.monotonic()
@@ -1438,6 +1441,9 @@ def main(argv=None):
             # viewer honestly shows "Tracking lost" until VIO
             # initialises on real motion (takeoff + doorway flight).
             vio, pose, tracking_valid = live_pose_step(vio, frame, pose, t)
+            if desk_mode:
+                tracking_valid = True
+                pose = src_pose
             marker, info = pipeline.process_frame(
                 frame, pose, tracking_valid, t)
             state.update_from_pipeline(pipeline, marker, info,
@@ -1556,16 +1562,22 @@ def main(argv=None):
                     hud_text = f"DRONE: [{flight_ctrl.status}]  Action: {flight_ctrl.last_action}{bat_str}"
                     cv2.rectangle(vis, (0, 0), (vis.shape[1], 34), (20, 20, 20), -1)
                     cv2.putText(vis, hud_text, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.62, hud_color, 2)
+                    if desk_mode:
+                        cv2.putText(vis, "[DESK TEST MODE: ON (Press M to toggle)]", (10, 58),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 0, 255), 2)
 
                     # HUD Bottom Bar: Key prompt
                     cv2.rectangle(vis, (0, vis.shape[0] - 28), (vis.shape[1], vis.shape[0]), (20, 20, 20), -1)
-                    cv2.putText(vis, "[T/Q] Takeoff  [E] Land  [W/S/A/D] Move 20cm  [I/K] Up/Down  [J/L] Turn  [U] Auto",
-                                (10, vis.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (230, 230, 230), 1)
+                    cv2.putText(vis, "[T/Q] Takeoff  [E] Land  [W/S/A/D] Move  [J/L] Turn  [U] Auto  [M] Desk Mode",
+                                (10, vis.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (230, 230, 230), 1)
 
                     # Flight recorder: annotated frame, non-blocking.
                     recorder.write_frame(vis)
                     cv2.imshow("Tello Drone Camera (Live Detection View)", vis)
                     key = cv2.waitKey(1) & 0xFF
+                    if key in (ord('m'), ord('M')):
+                        desk_mode = not desk_mode
+                        log.info("Desk Test Mode toggled: %s", "ON (forced valid tracking for desk testing)" if desk_mode else "OFF (real flight VIO tracking)")
                     dispatch_drone_key(key, flight_ctrl, autopilot, ctx)
                     # Closing the window with its X button hides it (the
                     # old Q key did this; Q is takeoff now, 2026-11-25).
